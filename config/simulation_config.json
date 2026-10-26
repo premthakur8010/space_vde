@@ -1,0 +1,12 @@
+{
+	"physicsPeriodUs": 1000,
+	"jitterToleranceUs": 100.0,
+	"defaultScenario": 1,
+	"solverIterations": 10,
+	"contactRestitution": 0.2,
+	"linearDamping": 0.001,
+	"angularDamping": 0.001,
+	"chaserInitialVelocityX": 0.1,
+	"targetMassKg": 100.0,
+	"chaserMassKg": 50.0
+}

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SimulationConfig>
+    <Spacecraft>
+        <!-- Chaser Spacecraft Configuration -->
+        <Chaser>
+            <MassKg>50.0</MassKg>
+            <Inertia>
+                <Ixx>5.0</Ixx>
+                <Iyy>5.0</Iyy>
+                <Izz>10.0</Izz>
+            </Inertia>
+            <InitialPosition>
+                <X>-3.0</X>
+                <Y>0.0</Y>
+                <Z>0.0</Z>
+            </InitialPosition>
+        </Chaser>
+
+        <!-- Target Spacecraft Configuration -->
+        <Target>
+            <MassKg>100.0</MassKg>
+            <Inertia>
+                <Ixx>10.0</Ixx>
+                <Iyy>10.0</Iyy>
+                <Izz>20.0</Izz>
+            </Inertia>
+            <InitialPosition>
+                <X>0.0</X>
+                <Y>0.0</Y>
+                <Z>0.0</Z>
+            </InitialPosition>
+        </Target>
+    </Spacecraft>
+
+    <Platform>
+        <!-- DEFAULT: Chaser on GST, Target on FST; FLIPPED: Target on GST, Chaser on FST -->
+        <FrameMapping>DEFAULT</FrameMapping>
+    </Platform>
+</SimulationConfig>
