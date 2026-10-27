@@ -39,7 +39,8 @@ namespace space_docking::dynamics
 
 		void setTelemetry(const Telemetry& t) noexcept;
 		void setNgcForces(const std::array<ForceTorque, 2>& f) noexcept;
-		void setGstFeedback(const GstFeedback& f) noexcept;
+		void setGspFeedback(const GspFeedback& f) noexcept;
+		void setGstFeedback(const GspFeedback& f) noexcept { setGspFeedback(f); }
 
 		[[nodiscard]] const SpacecraftDynamics& getChaser() const noexcept;
 		[[nodiscard]] const SpacecraftDynamics& getTarget() const noexcept;
@@ -59,7 +60,7 @@ namespace space_docking::dynamics
 
 		Telemetry m_currentTelemetry{};
 		std::array<ForceTorque, 2> m_ngcForces{};
-		GstFeedback m_latestGstFeedback{};
+		GspFeedback m_latestGspFeedback{};
 
 		RelativeState m_latestRelativeState{};
 		std::array<Pose, 2> m_latestPoses{};

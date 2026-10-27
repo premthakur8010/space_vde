@@ -9,7 +9,7 @@ namespace space_docking::dynamics
 {
 	std::array<Pose, 2> SpacecraftPoseComputation::compute(const BodyState& c,
 	                                                       const BodyState& t,
-	                                                       const GstFeedback& f) const noexcept
+	                                                       const GspFeedback& f) const noexcept
 	{
 		(void)f;
 		return std::array<Pose, 2>{c.pose, t.pose};

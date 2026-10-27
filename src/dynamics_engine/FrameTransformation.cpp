@@ -56,13 +56,13 @@ namespace space_docking::dynamics
 
 		if (m_flipMode == FrameMapping::DEFAULT)
 		{
-			// DEFAULT: Chaser on GST (Ground Stewart Platform), Target on FST (Flight Stewart Platform)
+			// DEFAULT: Chaser on GSP (Ground Stewart Platform), Target on FSP (Flight Stewart Platform)
 			out[0] = t.groundStewartPlatformForces;
 			out[1] = t.flightStewartPlatformForces;
 		}
 		else
 		{
-			// FLIPPED: Target on GST, Chaser on FST
+			// FLIPPED: Target on GSP, Chaser on FSP
 			out[0] = t.flightStewartPlatformForces;
 			out[1] = t.groundStewartPlatformForces;
 		}

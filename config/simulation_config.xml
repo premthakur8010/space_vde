@@ -1,39 +1,109 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Space Docking Simulation Configuration (VDE / Dynamics Engine)
+    
+    This configuration file sets up all physical properties, initial conditions,
+    hardware-in-the-loop (HIL) platform frame mappings, and output logging destinations
+    without requiring recompilation of C++ binaries.
+-->
 <SimulationConfig>
+    <!-- ===================================================================== -->
+    <!-- Spacecraft Physical Properties & Initial Flight Conditions            -->
+    <!-- ===================================================================== -->
     <Spacecraft>
-        <!-- Chaser Spacecraft Configuration -->
+        <!-- Chaser Spacecraft (Active Docking Vehicle) -->
         <Chaser>
+            <!-- Spacecraft dry/wet mass in kilograms (loaded dynamically via setup) -->
             <MassKg>50.0</MassKg>
+
+            <!-- Principal moments of inertia in kg*m^2 (diagonal tensor [Ixx, Iyy, Izz]) -->
             <Inertia>
                 <Ixx>5.0</Ixx>
                 <Iyy>5.0</Iyy>
                 <Izz>10.0</Izz>
             </Inertia>
+
+            <!-- Initial position in docking reference frame (meters) -->
+            <!-- Chaser starts along -X axis separated by 3.0 meters -->
             <InitialPosition>
                 <X>-3.0</X>
                 <Y>0.0</Y>
                 <Z>0.0</Z>
             </InitialPosition>
+
+            <!-- Initial linear velocity in m/s -->
+            <!-- Positive Vx represents closing approach velocity towards target -->
+            <InitialVelocity>
+                <Vx>0.05</Vx>
+                <Vy>0.0</Vy>
+                <Vz>0.0</Vz>
+            </InitialVelocity>
         </Chaser>
 
-        <!-- Target Spacecraft Configuration -->
+        <!-- Target Spacecraft (Passive / Station Vehicle) -->
         <Target>
+            <!-- Spacecraft mass in kilograms -->
             <MassKg>100.0</MassKg>
+
+            <!-- Principal moments of inertia in kg*m^2 -->
             <Inertia>
                 <Ixx>10.0</Ixx>
                 <Iyy>10.0</Iyy>
                 <Izz>20.0</Izz>
             </Inertia>
+
+            <!-- Target initial position in docking reference frame (origin at 0,0,0) -->
             <InitialPosition>
                 <X>0.0</X>
                 <Y>0.0</Y>
                 <Z>0.0</Z>
             </InitialPosition>
+
+            <!-- Target initial linear velocity in m/s (station-keeping at 0 m/s) -->
+            <InitialVelocity>
+                <Vx>0.0</Vx>
+                <Vy>0.0</Vy>
+                <Vz>0.0</Vz>
+            </InitialVelocity>
         </Target>
     </Spacecraft>
 
+    <!-- ===================================================================== -->
+    <!-- Hardware-in-the-Loop (HIL) Stewart Platform Mounting Mapping          -->
+    <!-- ===================================================================== -->
     <Platform>
-        <!-- DEFAULT: Chaser on GST, Target on FST; FLIPPED: Target on GST, Chaser on FST -->
+        <!-- 
+            Frame Mapping Mode:
+            - DEFAULT: Chaser mounted on Ground Stewart Platform (GSP), 
+                       Target mounted on Flight Stewart Platform (FSP).
+            - FLIPPED: Target mounted on Ground Stewart Platform (GSP), 
+                       Chaser mounted on Flight Stewart Platform (FSP).
+        -->
         <FrameMapping>DEFAULT</FrameMapping>
     </Platform>
+
+    <!-- ===================================================================== -->
+    <!-- Simulation Logging & Output Provision                                 -->
+    <!-- ===================================================================== -->
+    <!-- 
+        Configures where simulation state outputs (relative pose, velocities,
+        thruster forces, and timestamped telemetry) will be written.
+    -->
+    <Logging>
+        <!-- Enable or disable disk logging (true / false) -->
+        <Enabled>true</Enabled>
+
+        <!-- Output directory where log files will be saved -->
+        <LogDirectory>logs</LogDirectory>
+
+        <!-- Primary output log file name for trajectory state recording -->
+        <LogFileName>simulation_trajectory.csv</LogFileName>
+
+        <!-- 
+            Logging decimation rate: 
+            Specifies how often output is recorded from the 1000 Hz physics loop.
+            e.g. 10 = records every 10 ms (100 Hz output data rate).
+        -->
+        <LogDecimation>10</LogDecimation>
+    </Logging>
 </SimulationConfig>

@@ -53,7 +53,7 @@ if (WIN32)
 	target_link_libraries(space_docking_network PUBLIC ws2_32)
 endif()
 
-# 3. Dynamics Engine Module (GST / FST 6-DOF Simulation)
+# 3. Dynamics Engine Module (GSP / FSP 6-DOF Simulation)
 add_library(space_docking_dynamics_engine STATIC
 	src/dynamics_engine/SpacecraftDynamics.cpp
 	src/dynamics_engine/RelativeKinematics.cpp

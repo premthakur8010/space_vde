@@ -86,6 +86,14 @@ namespace space_docking::dynamics
 				outConfig.initialSeparation.position.y = extractDouble(posBlock, "Y", 0.0);
 				outConfig.initialSeparation.position.z = extractDouble(posBlock, "Z", 0.0);
 			}
+
+			const std::string velBlock = extractTagContent(chaserBlock, "InitialVelocity");
+			if (!velBlock.empty())
+			{
+				outConfig.chaserInitialVelocity.x = extractDouble(velBlock, "Vx", 0.0);
+				outConfig.chaserInitialVelocity.y = extractDouble(velBlock, "Vy", 0.0);
+				outConfig.chaserInitialVelocity.z = extractDouble(velBlock, "Vz", 0.0);
+			}
 		}
 
 		// Parse Target block
@@ -101,6 +109,14 @@ namespace space_docking::dynamics
 				outConfig.targetInertia.m[4] = extractDouble(inertiaBlock, "Iyy", 0.0);
 				outConfig.targetInertia.m[8] = extractDouble(inertiaBlock, "Izz", 0.0);
 			}
+
+			const std::string velBlock = extractTagContent(targetBlock, "InitialVelocity");
+			if (!velBlock.empty())
+			{
+				outConfig.targetInitialVelocity.x = extractDouble(velBlock, "Vx", 0.0);
+				outConfig.targetInitialVelocity.y = extractDouble(velBlock, "Vy", 0.0);
+				outConfig.targetInitialVelocity.z = extractDouble(velBlock, "Vz", 0.0);
+			}
 		}
 
 		// Parse Platform mapping block
@@ -115,6 +131,39 @@ namespace space_docking::dynamics
 			else
 			{
 				outConfig.frameMapping = FrameMapping::DEFAULT;
+			}
+		}
+
+		// Parse Logging configuration provision
+		const std::string loggingBlock = extractTagContent(xml, "Logging");
+		if (!loggingBlock.empty())
+		{
+			const std::string enabledStr = extractTagContent(loggingBlock, "Enabled");
+			outConfig.loggingEnabled = (enabledStr == "true" || enabledStr == "1");
+
+			const std::string logDir = extractTagContent(loggingBlock, "LogDirectory");
+			if (!logDir.empty())
+			{
+				outConfig.logDirectory = logDir;
+			}
+
+			const std::string logFile = extractTagContent(loggingBlock, "LogFileName");
+			if (!logFile.empty())
+			{
+				outConfig.logFileName = logFile;
+			}
+
+			const std::string decimationStr = extractTagContent(loggingBlock, "LogDecimation");
+			if (!decimationStr.empty())
+			{
+				try
+				{
+					outConfig.logDecimation = static_cast<uint32_t>(std::stoul(decimationStr));
+				}
+				catch (...)
+				{
+					outConfig.logDecimation = 10;
+				}
 			}
 		}
 

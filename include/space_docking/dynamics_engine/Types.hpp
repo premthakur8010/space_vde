@@ -16,6 +16,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace space_docking::dynamics
@@ -46,8 +47,8 @@ namespace space_docking::dynamics
 	// =========================================================================
 	enum class FrameMapping : uint8_t
 	{
-		DEFAULT = 0, // Chaser on Ground Stewart Platform (GST), Target on Flight Stewart Platform (FST)
-		FLIPPED = 1  // Target on Ground Stewart Platform (GST), Chaser on Flight Stewart Platform (FST)
+		DEFAULT = 0, // Chaser on Ground Stewart Platform (GSP), Target on Flight Stewart Platform (FSP)
+		FLIPPED = 1  // Target on Ground Stewart Platform (GSP), Chaser on Flight Stewart Platform (FSP)
 	};
 
 	// =========================================================================
@@ -141,26 +142,29 @@ namespace space_docking::dynamics
 	// =========================================================================
 
 	/**
-	 * @brief Live sensor telemetry from Ground Stewart Platform (GST) and Flight Stewart Platform (FST).
+	 * @brief Live sensor telemetry from Ground Stewart Platform (GSP) and Flight Stewart Platform (FSP).
 	 * Carries load-cell forces/torques and measured 6-DOF platform poses.
 	 */
 	struct Telemetry
 	{
 		double timestamp{0.0};
-		ForceTorque groundStewartPlatformForces{}; // GST load-cell forces/torques
-		ForceTorque flightStewartPlatformForces{}; // FST load-cell forces/torques
-		Pose groundStewartPlatformPose{};          // GST measured platform pose (position & orientation)
-		Pose flightStewartPlatformPose{};          // FST measured platform pose (position & orientation)
+		ForceTorque groundStewartPlatformForces{}; // GSP load-cell forces/torques
+		ForceTorque flightStewartPlatformForces{}; // FSP load-cell forces/torques
+		Pose groundStewartPlatformPose{};          // GSP measured platform pose (position & orientation)
+		Pose flightStewartPlatformPose{};          // FSP measured platform pose (position & orientation)
 	};
 
 	/**
-	 * @brief Actuator feedback received from the Ground Stewart Platform (GST).
+	 * @brief Actuator feedback received from the Ground Stewart Platform (GSP).
 	 */
-	struct GstFeedback
+	struct GspFeedback
 	{
 		std::array<double, 6> legLengths{};
 		Pose pose{};
 	};
+
+	// Backwards compatibility alias
+	using GstFeedback = GspFeedback;
 
 	// =========================================================================
 	// Spacecraft Dynamics State Vectors
@@ -236,7 +240,15 @@ namespace space_docking::dynamics
 		Matrix3 targetInertia{};
 		Vector3 initialOrbitElements{};
 		Pose initialSeparation{};
+		Vector3 chaserInitialVelocity{}; // Loaded dynamically from XML configuration
+		Vector3 targetInitialVelocity{}; // Loaded dynamically from XML configuration
 		FrameMapping frameMapping{FrameMapping::DEFAULT};
+
+		// Logging configuration provision (loaded dynamically from XML)
+		bool loggingEnabled{true};
+		std::string logDirectory{"logs"};
+		std::string logFileName{"simulation_trajectory.csv"};
+		uint32_t logDecimation{10};
 	};
 
 	/**

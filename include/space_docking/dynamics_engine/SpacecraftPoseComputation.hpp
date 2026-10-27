@@ -27,6 +27,6 @@ namespace space_docking::dynamics
 		 */
 		[[nodiscard]] std::array<Pose, 2> compute(const BodyState& c,
 		                                          const BodyState& t,
-		                                          const GstFeedback& f) const noexcept;
+		                                          const GspFeedback& f) const noexcept;
 	};
 }

@@ -28,12 +28,16 @@ namespace space_docking::dynamics
 		// Setup initial state from configuration
 		BodyState chaserState{};
 		chaserState.pose = config.initialSeparation;
+		chaserState.velocity = config.chaserInitialVelocity;
 		m_chaser.setState(chaserState);
 
 		BodyState targetState{};
+		targetState.velocity = config.targetInitialVelocity;
 		m_target.setState(targetState);
 
 		m_frameTransform.setFlipMode(config.frameMapping);
+		m_latestRelativeState = m_relativeKinematics.compute(chaserState, targetState);
+		m_latestPoses = m_poseComputation.compute(chaserState, targetState, m_latestGspFeedback);
 		m_initialized = true;
 
 		return ErrorCode::OK;
@@ -71,7 +75,7 @@ namespace space_docking::dynamics
 		const BodyState targetState = m_target.move(targetTotalFT, dt);
 
 		// 4. Compute spacecraft poses
-		m_latestPoses = m_poseComputation.compute(chaserState, targetState, m_latestGstFeedback);
+		m_latestPoses = m_poseComputation.compute(chaserState, targetState, m_latestGspFeedback);
 
 		// 5. Compute relative docking state Y
 		m_latestRelativeState = m_relativeKinematics.compute(chaserState, targetState);
@@ -89,9 +93,9 @@ namespace space_docking::dynamics
 		m_ngcForces = f;
 	}
 
-	void DynamicsEngine::setGstFeedback(const GstFeedback& f) noexcept
+	void DynamicsEngine::setGspFeedback(const GspFeedback& f) noexcept
 	{
-		m_latestGstFeedback = f;
+		m_latestGspFeedback = f;
 	}
 
 	const SpacecraftDynamics& DynamicsEngine::getChaser() const noexcept

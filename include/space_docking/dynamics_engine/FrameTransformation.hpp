@@ -2,7 +2,7 @@
  * @file FrameTransformation.hpp
  * @brief Converts sensor force and torque readings between motion platforms and spacecraft body frames.
  *
- * Handles both DEFAULT (Chaser on GST, Target on FST) and FLIPPED (Target on GST, Chaser on FST) mounting.
+ * Handles both DEFAULT (Chaser on GSP, Target on FSP) and FLIPPED (Target on GSP, Chaser on FSP) mounting.
  */
 
 #pragma once

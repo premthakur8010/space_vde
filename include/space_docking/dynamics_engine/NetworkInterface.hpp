@@ -16,7 +16,7 @@ namespace space_docking::dynamics
 		// Telemetry and feedback inputs
 		virtual Telemetry getSensorForces() = 0;
 		virtual std::array<ForceTorque, 2> getNgcForces() = 0;
-		virtual GstFeedback getGstFeedback() = 0;
+		virtual GspFeedback getGspFeedback() = 0;
 		virtual RunConfig getRunConfig() = 0;
 
 		// Outputs
