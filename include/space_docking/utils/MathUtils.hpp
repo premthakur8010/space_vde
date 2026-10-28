@@ -16,6 +16,30 @@ namespace space_docking::utils
 	constexpr double kDefaultTolerance = 1e-6;
 	constexpr double kQuaternionTolerance = 1e-9;
 
+	/// Millimetre <-> meter conversion (config files use mm; engine state uses SI meters).
+	constexpr double kMmToM = 1e-3;
+	constexpr double kMToMm = 1e3;
+
+	/// OpenGL world units per millimetre. 1.0 => 1:1 mapping (1 GL unit = 1 mm).
+	constexpr double kOpenGlUnitsPerMm = 1.0;
+
+	/**
+	 * @brief Convert a position in millimetres (target reference frame) to OpenGL world units.
+	 * Axes are identical (+X docking axis, +Y up, +Z right), so only scaling is applied.
+	 */
+	[[nodiscard]] constexpr double mmToOpenGl(double mm) noexcept
+	{
+		return mm * kOpenGlUnitsPerMm;
+	}
+
+	/**
+	 * @brief Convert an engine position in meters to OpenGL world units (via millimetres).
+	 */
+	[[nodiscard]] constexpr double metersToOpenGl(double meters) noexcept
+	{
+		return mmToOpenGl(meters * kMToMm);
+	}
+
 	/**
 	 * @brief Floating-point comparison with an explicit epsilon.
 	 * @param a First value.

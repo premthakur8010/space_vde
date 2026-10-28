@@ -1,6 +1,7 @@
 #include "space_docking/dynamics_engine/DynamicsEngine.hpp"
 #include "space_docking/dynamics_engine/XmlConfigLoader.hpp"
 #include "space_docking/utils/Logger.hpp"
+#include "space_docking/utils/MathUtils.hpp"
 
 #include <csignal>
 #include <iostream>
@@ -50,7 +51,10 @@ int main(int argc, char** argv)
 	std::cout << "Target Mass: " << config.targetMass << " kg" << std::endl;
 	std::cout << "Chaser Initial Pos: (" << config.initialSeparation.position.x << ", "
 	          << config.initialSeparation.position.y << ", "
-	          << config.initialSeparation.position.z << ") m" << std::endl;
+	          << config.initialSeparation.position.z << ") m (config: "
+	          << space_docking::utils::metersToOpenGl(config.initialSeparation.position.x) << ", "
+	          << space_docking::utils::metersToOpenGl(config.initialSeparation.position.y) << ", "
+	          << space_docking::utils::metersToOpenGl(config.initialSeparation.position.z) << " mm = OpenGL units, 1:1)" << std::endl;
 	std::cout << "Chaser Initial Vel: (" << config.chaserInitialVelocity.x << ", "
 	          << config.chaserInitialVelocity.y << ", "
 	          << config.chaserInitialVelocity.z << ") m/s" << std::endl;

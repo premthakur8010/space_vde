@@ -4,6 +4,8 @@
  */
 
 #include "space_docking/dynamics_engine/XmlConfigLoader.hpp"
+#include "space_docking/dynamics_engine/XmlTags.hpp"
+#include "space_docking/utils/MathUtils.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -65,66 +67,70 @@ namespace space_docking::dynamics
 		buffer << file.rdbuf();
 		const std::string xml = buffer.str();
 
+		namespace tags = xml_tags;
+		namespace values = xml_values;
+
 		// Parse Chaser block
-		const std::string chaserBlock = extractTagContent(xml, "Chaser");
+		const std::string chaserBlock = extractTagContent(xml, tags::kChaser);
 		if (!chaserBlock.empty())
 		{
-			outConfig.chaserMass = extractDouble(chaserBlock, "MassKg", 0.0);
+			outConfig.chaserMass = extractDouble(chaserBlock, tags::kMassKg, 0.0);
 
-			const std::string inertiaBlock = extractTagContent(chaserBlock, "Inertia");
+			const std::string inertiaBlock = extractTagContent(chaserBlock, tags::kInertia);
 			if (!inertiaBlock.empty())
 			{
-				outConfig.chaserInertia.m[0] = extractDouble(inertiaBlock, "Ixx", 0.0);
-				outConfig.chaserInertia.m[4] = extractDouble(inertiaBlock, "Iyy", 0.0);
-				outConfig.chaserInertia.m[8] = extractDouble(inertiaBlock, "Izz", 0.0);
+				outConfig.chaserInertia.m[0] = extractDouble(inertiaBlock, tags::kIxx, 0.0);
+				outConfig.chaserInertia.m[4] = extractDouble(inertiaBlock, tags::kIyy, 0.0);
+				outConfig.chaserInertia.m[8] = extractDouble(inertiaBlock, tags::kIzz, 0.0);
 			}
 
-			const std::string posBlock = extractTagContent(chaserBlock, "InitialPosition");
+			const std::string posBlock = extractTagContent(chaserBlock, tags::kInitialPosition);
 			if (!posBlock.empty())
 			{
-				outConfig.initialSeparation.position.x = extractDouble(posBlock, "X", 0.0);
-				outConfig.initialSeparation.position.y = extractDouble(posBlock, "Y", 0.0);
-				outConfig.initialSeparation.position.z = extractDouble(posBlock, "Z", 0.0);
+				// XML positions are in millimetres (target reference frame); engine state is SI meters.
+				outConfig.initialSeparation.position.x = extractDouble(posBlock, tags::kX, 0.0) * space_docking::utils::kMmToM;
+				outConfig.initialSeparation.position.y = extractDouble(posBlock, tags::kY, 0.0) * space_docking::utils::kMmToM;
+				outConfig.initialSeparation.position.z = extractDouble(posBlock, tags::kZ, 0.0) * space_docking::utils::kMmToM;
 			}
 
-			const std::string velBlock = extractTagContent(chaserBlock, "InitialVelocity");
+			const std::string velBlock = extractTagContent(chaserBlock, tags::kInitialVelocity);
 			if (!velBlock.empty())
 			{
-				outConfig.chaserInitialVelocity.x = extractDouble(velBlock, "Vx", 0.0);
-				outConfig.chaserInitialVelocity.y = extractDouble(velBlock, "Vy", 0.0);
-				outConfig.chaserInitialVelocity.z = extractDouble(velBlock, "Vz", 0.0);
+				outConfig.chaserInitialVelocity.x = extractDouble(velBlock, tags::kVx, 0.0);
+				outConfig.chaserInitialVelocity.y = extractDouble(velBlock, tags::kVy, 0.0);
+				outConfig.chaserInitialVelocity.z = extractDouble(velBlock, tags::kVz, 0.0);
 			}
 		}
 
 		// Parse Target block
-		const std::string targetBlock = extractTagContent(xml, "Target");
+		const std::string targetBlock = extractTagContent(xml, tags::kTarget);
 		if (!targetBlock.empty())
 		{
-			outConfig.targetMass = extractDouble(targetBlock, "MassKg", 0.0);
+			outConfig.targetMass = extractDouble(targetBlock, tags::kMassKg, 0.0);
 
-			const std::string inertiaBlock = extractTagContent(targetBlock, "Inertia");
+			const std::string inertiaBlock = extractTagContent(targetBlock, tags::kInertia);
 			if (!inertiaBlock.empty())
 			{
-				outConfig.targetInertia.m[0] = extractDouble(inertiaBlock, "Ixx", 0.0);
-				outConfig.targetInertia.m[4] = extractDouble(inertiaBlock, "Iyy", 0.0);
-				outConfig.targetInertia.m[8] = extractDouble(inertiaBlock, "Izz", 0.0);
+				outConfig.targetInertia.m[0] = extractDouble(inertiaBlock, tags::kIxx, 0.0);
+				outConfig.targetInertia.m[4] = extractDouble(inertiaBlock, tags::kIyy, 0.0);
+				outConfig.targetInertia.m[8] = extractDouble(inertiaBlock, tags::kIzz, 0.0);
 			}
 
-			const std::string velBlock = extractTagContent(targetBlock, "InitialVelocity");
+			const std::string velBlock = extractTagContent(targetBlock, tags::kInitialVelocity);
 			if (!velBlock.empty())
 			{
-				outConfig.targetInitialVelocity.x = extractDouble(velBlock, "Vx", 0.0);
-				outConfig.targetInitialVelocity.y = extractDouble(velBlock, "Vy", 0.0);
-				outConfig.targetInitialVelocity.z = extractDouble(velBlock, "Vz", 0.0);
+				outConfig.targetInitialVelocity.x = extractDouble(velBlock, tags::kVx, 0.0);
+				outConfig.targetInitialVelocity.y = extractDouble(velBlock, tags::kVy, 0.0);
+				outConfig.targetInitialVelocity.z = extractDouble(velBlock, tags::kVz, 0.0);
 			}
 		}
 
 		// Parse Platform mapping block
-		const std::string platformBlock = extractTagContent(xml, "Platform");
+		const std::string platformBlock = extractTagContent(xml, tags::kPlatform);
 		if (!platformBlock.empty())
 		{
-			const std::string mappingStr = extractTagContent(platformBlock, "FrameMapping");
-			if (mappingStr == "FLIPPED")
+			const std::string mappingStr = extractTagContent(platformBlock, tags::kFrameMapping);
+			if (mappingStr == values::kFrameMappingFlipped)
 			{
 				outConfig.frameMapping = FrameMapping::FLIPPED;
 			}
@@ -135,25 +141,25 @@ namespace space_docking::dynamics
 		}
 
 		// Parse Logging configuration provision
-		const std::string loggingBlock = extractTagContent(xml, "Logging");
+		const std::string loggingBlock = extractTagContent(xml, tags::kLogging);
 		if (!loggingBlock.empty())
 		{
-			const std::string enabledStr = extractTagContent(loggingBlock, "Enabled");
-			outConfig.loggingEnabled = (enabledStr == "true" || enabledStr == "1");
+			const std::string enabledStr = extractTagContent(loggingBlock, tags::kEnabled);
+			outConfig.loggingEnabled = (enabledStr == values::kTrue || enabledStr == values::kOne);
 
-			const std::string logDir = extractTagContent(loggingBlock, "LogDirectory");
+			const std::string logDir = extractTagContent(loggingBlock, tags::kLogDirectory);
 			if (!logDir.empty())
 			{
 				outConfig.logDirectory = logDir;
 			}
 
-			const std::string logFile = extractTagContent(loggingBlock, "LogFileName");
+			const std::string logFile = extractTagContent(loggingBlock, tags::kLogFileName);
 			if (!logFile.empty())
 			{
 				outConfig.logFileName = logFile;
 			}
 
-			const std::string decimationStr = extractTagContent(loggingBlock, "LogDecimation");
+			const std::string decimationStr = extractTagContent(loggingBlock, tags::kLogDecimation);
 			if (!decimationStr.empty())
 			{
 				try
