@@ -4,6 +4,7 @@
  */
 
 #include "space_docking/dynamics_engine/DynamicsEngine.hpp"
+#include "space_docking/utils/LogMacros.hpp"
 
 namespace space_docking::dynamics
 {
@@ -15,6 +16,7 @@ namespace space_docking::dynamics
 		ErrorCode ec = m_chaser.setup(config.chaserMass, config.chaserInertia);
 		if (ec != ErrorCode::OK)
 		{
+			SD_LOG_ERROR(ec, "Failed to setup Chaser dynamics parameters");
 			return ec;
 		}
 
@@ -22,6 +24,7 @@ namespace space_docking::dynamics
 		ec = m_target.setup(config.targetMass, config.targetInertia);
 		if (ec != ErrorCode::OK)
 		{
+			SD_LOG_ERROR(ec, "Failed to setup Target dynamics parameters");
 			return ec;
 		}
 
@@ -40,6 +43,7 @@ namespace space_docking::dynamics
 		m_latestPoses = m_poseComputation.compute(chaserState, targetState, m_latestGspFeedback);
 		m_initialized = true;
 
+		SD_LOG_INFO("DynamicsEngine successfully initialized with 2 spacecraft bodies");
 		return ErrorCode::OK;
 	}
 
@@ -47,6 +51,7 @@ namespace space_docking::dynamics
 	{
 		if (!m_initialized)
 		{
+			SD_LOG_ERROR(ErrorCode::NOT_INITIALIZED, "DynamicsEngine::step() invoked before initialize()");
 			return ErrorCode::NOT_INITIALIZED;
 		}
 

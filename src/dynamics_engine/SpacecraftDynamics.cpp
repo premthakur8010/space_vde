@@ -10,6 +10,7 @@
  */
 
 #include "space_docking/dynamics_engine/SpacecraftDynamics.hpp"
+#include "space_docking/utils/LogMacros.hpp"
 
 #include <cmath>
 
@@ -22,7 +23,8 @@ namespace space_docking::dynamics
 	{
 		if (mass <= 0.0)
 		{
-			return ErrorCode::INVALID_ARGUMENT;
+			SD_LOG_ERROR(ErrorCode::INVALID_MASS, "SpacecraftDynamics::setup() rejected non-positive mass: " << mass << " kg (must be > 0.0)");
+			return ErrorCode::INVALID_MASS;
 		}
 
 		m_mass = mass;
@@ -39,6 +41,13 @@ namespace space_docking::dynamics
 		// Guard: Spacecraft must have a valid mass configured dynamically via setup()
 		if (m_mass <= 0.0)
 		{
+			SD_LOG_ERROR(ErrorCode::NOT_INITIALIZED, "SpacecraftDynamics::move() called on uninitialized body (mass is 0 or unconfigured)");
+			return m_state;
+		}
+
+		if (dt <= 0.0)
+		{
+			SD_LOG_ERROR(ErrorCode::INVALID_TIMESTEP, "SpacecraftDynamics::move() called with non-positive timestep dt: " << dt);
 			return m_state;
 		}
 

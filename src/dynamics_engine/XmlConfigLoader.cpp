@@ -5,6 +5,7 @@
 
 #include "space_docking/dynamics_engine/XmlConfigLoader.hpp"
 #include "space_docking/dynamics_engine/XmlTags.hpp"
+#include "space_docking/utils/LogMacros.hpp"
 #include "space_docking/utils/MathUtils.hpp"
 
 #include <fstream>
@@ -57,22 +58,35 @@ namespace space_docking::dynamics
 
 	ErrorCode XmlConfigLoader::loadRunConfig(const std::string& filePath, RunConfig& outConfig)
 	{
+		// 1. Verify file accessibility on filesystem
 		std::ifstream file(filePath);
 		if (!file.is_open())
 		{
-			return ErrorCode::INVALID_ARGUMENT;
+			SD_LOG_ERROR(ErrorCode::CONFIG_FILE_NOT_FOUND, "Failed to open XML configuration file: " << filePath);
+			return ErrorCode::CONFIG_FILE_NOT_FOUND;
 		}
 
+		// 2. Read whole file into buffer and verify non-empty content
 		std::stringstream buffer;
 		buffer << file.rdbuf();
 		const std::string xml = buffer.str();
 
+		if (xml.empty())
+		{
+			SD_LOG_ERROR(ErrorCode::CONFIG_PARSE_ERROR, "XML configuration file is empty: " << filePath);
+			return ErrorCode::CONFIG_PARSE_ERROR;
+		}
+
 		namespace tags = xml_tags;
 		namespace values = xml_values;
 
-		// Parse Chaser block
+		// 3. Parse and validate Chaser block
 		const std::string chaserBlock = extractTagContent(xml, tags::kChaser);
-		if (!chaserBlock.empty())
+		if (chaserBlock.empty())
+		{
+			SD_LOG_ERROR(ErrorCode::CONFIG_MISSING_TAG, "Missing required <" << tags::kChaser << "> block in: " << filePath);
+			return ErrorCode::CONFIG_MISSING_TAG;
+		}
 		{
 			outConfig.chaserMass = extractDouble(chaserBlock, tags::kMassKg, 0.0);
 
@@ -100,13 +114,29 @@ namespace space_docking::dynamics
 				outConfig.chaserInitialVelocity.y = extractDouble(velBlock, tags::kVy, 0.0);
 				outConfig.chaserInitialVelocity.z = extractDouble(velBlock, tags::kVz, 0.0);
 			}
+
+			// Validate physical mass parameter (must be positive to prevent division by zero in dynamics)
+			if (outConfig.chaserMass <= 0.0)
+			{
+				SD_LOG_ERROR(ErrorCode::INVALID_MASS, "Chaser mass must be > 0.0 kg in " << filePath << ", parsed: " << outConfig.chaserMass);
+				return ErrorCode::INVALID_MASS;
+			}
 		}
 
-		// Parse Target block
+		// 4. Parse and validate Target block
 		const std::string targetBlock = extractTagContent(xml, tags::kTarget);
-		if (!targetBlock.empty())
+		if (targetBlock.empty())
+		{
+			SD_LOG_ERROR(ErrorCode::CONFIG_MISSING_TAG, "Missing required <" << tags::kTarget << "> block in: " << filePath);
+			return ErrorCode::CONFIG_MISSING_TAG;
+		}
 		{
 			outConfig.targetMass = extractDouble(targetBlock, tags::kMassKg, 0.0);
+			if (outConfig.targetMass <= 0.0)
+			{
+				SD_LOG_ERROR(ErrorCode::INVALID_MASS, "Target mass must be > 0.0 kg in " << filePath << ", parsed: " << outConfig.targetMass);
+				return ErrorCode::INVALID_MASS;
+			}
 
 			const std::string inertiaBlock = extractTagContent(targetBlock, tags::kInertia);
 			if (!inertiaBlock.empty())
@@ -172,6 +202,9 @@ namespace space_docking::dynamics
 				}
 			}
 		}
+
+		SD_LOG_INFO("Successfully loaded simulation configuration from " << filePath
+		            << " (Chaser: " << outConfig.chaserMass << " kg, Target: " << outConfig.targetMass << " kg)");
 
 		return ErrorCode::OK;
 	}

@@ -24,16 +24,90 @@ namespace space_docking::dynamics
 	// =========================================================================
 	// Error Handling & Status Codes
 	// =========================================================================
+	/**
+	 * @enum ErrorCode
+	 * @brief Unified error and status codes for the entire simulation framework.
+	 *
+	 * Categorized into distinct numerical ranges:
+	 *  -  0 to -9  : General engine status & lifecycle (OK, initialization, bad arguments)
+	 *  - -10 to -19: Configuration & XML parsing (file missing, syntax errors, missing tags)
+	 *  - -20 to -29: Spacecraft physical parameters (invalid mass, non-invertible inertia)
+	 *  - -30 to -39: Mathematical / numerical integration (NaN/Inf divergence, singular matrices)
+	 *  - -40 to -49: Flight safety & docking boundary violations (corridor breach, collision)
+	 *  - -50 to -69: Timing deadlines, timeouts, and network/UDP communication errors
+	 */
 	enum class ErrorCode : int32_t
 	{
+		// General Status
 		OK = 0,
-		INVALID_ARGUMENT = -1,
-		NOT_INITIALIZED = -2,
-		STEP_FAILED = -3,
-		TIMEOUT = -4,
-		NETWORK_ERROR = -5,
-		OUT_OF_BOUNDS = -6
+		UNKNOWN_ERROR = -1,
+		INVALID_ARGUMENT = -2,
+		NOT_INITIALIZED = -3,
+
+		// Configuration & XML (Cold Path)
+		CONFIG_FILE_NOT_FOUND = -10,
+		CONFIG_PARSE_ERROR = -11,
+		CONFIG_MISSING_TAG = -12,
+		CONFIG_INVALID_VALUE = -13,
+
+		// Physical Spacecraft Parameters
+		INVALID_MASS = -20,
+		INVALID_INERTIA = -21,
+		INVALID_TIMESTEP = -22,
+
+		// Mathematical & Numerical Integration (Hot Path)
+		STEP_FAILED = -30,
+		MATH_NAN_OR_INF = -31,
+		MATH_QUATERNION_ZERO_NORM = -32,
+		MATH_SINGULAR_MATRIX = -33,
+
+		// Flight Safety & Docking Corridor
+		OUT_OF_BOUNDS = -40,
+		DOCKING_COLLISION = -41,
+		DOCKING_CORRIDOR_EXCEEDED = -42,
+		PLATFORM_LIMIT_EXCEEDED = -43,
+
+		// Real-time Timing & Communication
+		TIMEOUT = -50,
+		REALTIME_DEADLINE_MISSED = -51,
+		NETWORK_ERROR = -60,
+		SOCKET_BIND_FAILED = -61
 	};
+
+	/**
+	 * @brief Converts an ErrorCode enum to a human-readable string literal.
+	 * Evaluated at compile-time (constexpr) with zero runtime heap allocation.
+	 */
+	[[nodiscard]] constexpr const char* errorCodeToString(ErrorCode code) noexcept
+	{
+		switch (code)
+		{
+			case ErrorCode::OK: return "OK";
+			case ErrorCode::UNKNOWN_ERROR: return "UNKNOWN_ERROR";
+			case ErrorCode::INVALID_ARGUMENT: return "INVALID_ARGUMENT";
+			case ErrorCode::NOT_INITIALIZED: return "NOT_INITIALIZED";
+			case ErrorCode::CONFIG_FILE_NOT_FOUND: return "CONFIG_FILE_NOT_FOUND";
+			case ErrorCode::CONFIG_PARSE_ERROR: return "CONFIG_PARSE_ERROR";
+			case ErrorCode::CONFIG_MISSING_TAG: return "CONFIG_MISSING_TAG";
+			case ErrorCode::CONFIG_INVALID_VALUE: return "CONFIG_INVALID_VALUE";
+			case ErrorCode::INVALID_MASS: return "INVALID_MASS";
+			case ErrorCode::INVALID_INERTIA: return "INVALID_INERTIA";
+			case ErrorCode::INVALID_TIMESTEP: return "INVALID_TIMESTEP";
+			case ErrorCode::STEP_FAILED: return "STEP_FAILED";
+			case ErrorCode::MATH_NAN_OR_INF: return "MATH_NAN_OR_INF";
+			case ErrorCode::MATH_QUATERNION_ZERO_NORM: return "MATH_QUATERNION_ZERO_NORM";
+			case ErrorCode::MATH_SINGULAR_MATRIX: return "MATH_SINGULAR_MATRIX";
+			case ErrorCode::OUT_OF_BOUNDS: return "OUT_OF_BOUNDS";
+			case ErrorCode::DOCKING_COLLISION: return "DOCKING_COLLISION";
+			case ErrorCode::DOCKING_CORRIDOR_EXCEEDED: return "DOCKING_CORRIDOR_EXCEEDED";
+			case ErrorCode::PLATFORM_LIMIT_EXCEEDED: return "PLATFORM_LIMIT_EXCEEDED";
+			case ErrorCode::TIMEOUT: return "TIMEOUT";
+			case ErrorCode::REALTIME_DEADLINE_MISSED: return "REALTIME_DEADLINE_MISSED";
+			case ErrorCode::NETWORK_ERROR: return "NETWORK_ERROR";
+			case ErrorCode::SOCKET_BIND_FAILED: return "SOCKET_BIND_FAILED";
+		}
+		return "UNKNOWN_ERROR_CODE";
+	}
 
 	enum class LogLevel : uint8_t
 	{

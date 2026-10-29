@@ -1,5 +1,6 @@
 #include "space_docking/dynamics_engine/DynamicsEngine.hpp"
 #include "space_docking/dynamics_engine/XmlConfigLoader.hpp"
+#include "space_docking/utils/LogMacros.hpp"
 #include "space_docking/utils/Logger.hpp"
 #include "space_docking/utils/MathUtils.hpp"
 
@@ -40,11 +41,21 @@ int main(int argc, char** argv)
 	std::cout << "Loading configuration: " << configPath << "\n";
 
 	space_docking::dynamics::RunConfig config{};
+	// 1. Load XML configuration file and handle potential configuration errors
 	space_docking::dynamics::ErrorCode ec = space_docking::dynamics::XmlConfigLoader::loadRunConfig(configPath, config);
 	if (ec != space_docking::dynamics::ErrorCode::OK)
 	{
-		std::cerr << "[ERROR] Failed to load configuration from " << configPath << "\n";
+		SD_LOG_ERROR(ec, "Failed to load simulation configuration from " << configPath);
 		return 1;
+	}
+
+	// 2. If XML has <Logging><Enabled>true</Enabled>, mirror all code-level event logs to simulation.log
+	// Note: simulation_trajectory.csv is reserved for numerical telemetry state vectors (rolling window).
+	if (config.loggingEnabled)
+	{
+		const std::string logPath = config.logDirectory + "/simulation.log";
+		space_docking::utils::Logger::getInstance().setOutputFile(logPath);
+		SD_LOG_INFO("File logging active: writing diagnostics to " << logPath);
 	}
 
 	std::cout << "Chaser Mass: " << config.chaserMass << " kg" << std::endl;
@@ -66,7 +77,7 @@ int main(int argc, char** argv)
 	ec = engine.initialize(config);
 	if (ec != space_docking::dynamics::ErrorCode::OK)
 	{
-		std::cerr << "[ERROR] Engine initialization failed with code: " << static_cast<int>(ec) << std::endl;
+		SD_LOG_ERROR(ec, "Engine initialization failed with code: " << space_docking::dynamics::errorCodeToString(ec));
 		return 1;
 	}
 
