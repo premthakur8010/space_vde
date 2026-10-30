@@ -10,7 +10,7 @@ and `src/dynamics_engine/XmlConfigLoader.cpp`.
 | What is the "docking reference frame"? | Renamed to **target reference frame** and defined in the config comments | Done |
 | Position should be in mm in the target frame, with a 1:1 mapping to OpenGL | Config uses mm; 1:1 mm-to-OpenGL mapping added | Done |
 | Hardcode strings in `XmlConfigLoader.cpp` | Moved tag names and values into `XmlTags.hpp` | Done |
-| Should the tags be lowercase? | PascalCase kept for now; awaiting decision | Open |
+| Should the tags be lowercase? | All XML tags switched to lowercase; tag search made case-insensitive; values trimmed and lowercased before validation | Done |
 | `LogDirectory`: relative or absolute path? | Relative by default (`logs`); absolute-path support and file writing not implemented yet | Open |
 
 ## 1. Target reference frame (mm)

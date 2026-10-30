@@ -8,28 +8,79 @@
 #include "space_docking/utils/LogMacros.hpp"
 #include "space_docking/utils/MathUtils.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 namespace space_docking::dynamics
 {
 	namespace
 	{
-		// Extracts text between <tagName> and </tagName> inside a parent block
+		// Returns lowercase version of a string_view with leading/trailing whitespace trimmed
+		std::string toLowerTrimmed(std::string_view sv)
+		{
+			const auto start = sv.find_first_not_of(" \t\r\n");
+			if (start == std::string_view::npos)
+			{
+				return "";
+			}
+			const auto end = sv.find_last_not_of(" \t\r\n");
+			sv = sv.substr(start, end - start + 1);
+
+			std::string result;
+			result.reserve(sv.size());
+			for (char c : sv)
+			{
+				result.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+			}
+			return result;
+		}
+
+		// Finds substring case-insensitively, returns index in haystack
+		size_t findCaseInsensitive(std::string_view haystack, std::string_view needle, size_t pos = 0)
+		{
+			if (needle.empty())
+			{
+				return pos <= haystack.size() ? pos : std::string_view::npos;
+			}
+			if (pos + needle.size() > haystack.size())
+			{
+				return std::string_view::npos;
+			}
+
+			auto it = std::search(
+				haystack.begin() + pos, haystack.end(),
+				needle.begin(), needle.end(),
+				[](char c1, char c2) {
+					return std::tolower(static_cast<unsigned char>(c1)) ==
+					       std::tolower(static_cast<unsigned char>(c2));
+				});
+
+			if (it == haystack.end())
+			{
+				return std::string_view::npos;
+			}
+			return static_cast<size_t>(std::distance(haystack.begin(), it));
+		}
+
+		// Extracts text between <tagName> and </tagName> inside a parent block.
+		// Tag search is case-insensitive, but the extracted content preserves original casing!
 		std::string extractTagContent(const std::string& xml, const std::string& tagName)
 		{
 			const std::string openTag = "<" + tagName + ">";
 			const std::string closeTag = "</" + tagName + ">";
 
-			const size_t start = xml.find(openTag);
+			const size_t start = findCaseInsensitive(xml, openTag);
 			if (start == std::string::npos)
 			{
 				return "";
 			}
 
 			const size_t contentStart = start + openTag.length();
-			const size_t end = xml.find(closeTag, contentStart);
+			const size_t end = findCaseInsensitive(xml, closeTag, contentStart);
 			if (end == std::string::npos)
 			{
 				return "";
@@ -159,14 +210,26 @@ namespace space_docking::dynamics
 		const std::string platformBlock = extractTagContent(xml, tags::kPlatform);
 		if (!platformBlock.empty())
 		{
-			const std::string mappingStr = extractTagContent(platformBlock, tags::kFrameMapping);
-			if (mappingStr == values::kFrameMappingFlipped)
+			const std::string rawMapping = extractTagContent(platformBlock, tags::kFrameMapping);
+			if (!rawMapping.empty())
 			{
-				outConfig.frameMapping = FrameMapping::FLIPPED;
-			}
-			else
-			{
-				outConfig.frameMapping = FrameMapping::DEFAULT;
+				const std::string mappingStr = toLowerTrimmed(rawMapping);
+				if (mappingStr == values::kFrameMappingFlipped)
+				{
+					outConfig.frameMapping = FrameMapping::FLIPPED;
+				}
+				else if (mappingStr == values::kFrameMappingDefault)
+				{
+					outConfig.frameMapping = FrameMapping::DEFAULT;
+				}
+				else
+				{
+					SD_LOG_ERROR(ErrorCode::CONFIG_INVALID_VALUE,
+					             "Invalid <" << tags::kFrameMapping << "> value: '" << rawMapping
+					             << "'. Expected '" << values::kFrameMappingDefault << "' or '"
+					             << values::kFrameMappingFlipped << "'");
+					return ErrorCode::CONFIG_INVALID_VALUE;
+				}
 			}
 		}
 
@@ -174,9 +237,28 @@ namespace space_docking::dynamics
 		const std::string loggingBlock = extractTagContent(xml, tags::kLogging);
 		if (!loggingBlock.empty())
 		{
-			const std::string enabledStr = extractTagContent(loggingBlock, tags::kEnabled);
-			outConfig.loggingEnabled = (enabledStr == values::kTrue || enabledStr == values::kOne);
+			const std::string rawEnabled = extractTagContent(loggingBlock, tags::kEnabled);
+			if (!rawEnabled.empty())
+			{
+				const std::string enabledStr = toLowerTrimmed(rawEnabled);
+				if (enabledStr == values::kTrue || enabledStr == values::kOne)
+				{
+					outConfig.loggingEnabled = true;
+				}
+				else if (enabledStr == values::kFalse || enabledStr == values::kZero)
+				{
+					outConfig.loggingEnabled = false;
+				}
+				else
+				{
+					SD_LOG_ERROR(ErrorCode::CONFIG_INVALID_VALUE,
+					             "Invalid <" << tags::kEnabled << "> boolean value: '" << rawEnabled
+					             << "'. Expected 'true', 'false', '1', or '0'");
+					return ErrorCode::CONFIG_INVALID_VALUE;
+				}
+			}
 
+			// Paths preserve original casing (case-sensitive on Unix/Linux filesystems)
 			const std::string logDir = extractTagContent(loggingBlock, tags::kLogDirectory);
 			if (!logDir.empty())
 			{
@@ -194,11 +276,20 @@ namespace space_docking::dynamics
 			{
 				try
 				{
-					outConfig.logDecimation = static_cast<uint32_t>(std::stoul(decimationStr));
+					const unsigned long parsed = std::stoul(toLowerTrimmed(decimationStr));
+					if (parsed == 0)
+					{
+						SD_LOG_ERROR(ErrorCode::CONFIG_INVALID_VALUE,
+						             "Invalid <" << tags::kLogDecimation << "> value: 0 (must be >= 1 step)");
+						return ErrorCode::CONFIG_INVALID_VALUE;
+					}
+					outConfig.logDecimation = static_cast<uint32_t>(parsed);
 				}
 				catch (...)
 				{
-					outConfig.logDecimation = 10;
+					SD_LOG_ERROR(ErrorCode::CONFIG_INVALID_VALUE,
+					             "Invalid <" << tags::kLogDecimation << "> integer: '" << decimationStr << "'");
+					return ErrorCode::CONFIG_INVALID_VALUE;
 				}
 			}
 		}

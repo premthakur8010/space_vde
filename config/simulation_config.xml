@@ -6,83 +6,83 @@
     hardware-in-the-loop (HIL) platform frame mappings, and output logging destinations
     without requiring recompilation of C++ binaries.
 -->
-<SimulationConfig>
+<simulationconfig>
     <!-- ===================================================================== -->
     <!-- Spacecraft Physical Properties & Initial Flight Conditions            -->
     <!-- ===================================================================== -->
-    <Spacecraft>
+    <spacecraft>
         <!-- Chaser Spacecraft (Active Docking Vehicle) -->
-        <Chaser>
+        <chaser>
             <!-- Spacecraft dry/wet mass in kilograms (loaded dynamically via setup) -->
-            <MassKg>50.0</MassKg>
+            <masskg>50.0</masskg>
 
             <!-- Principal moments of inertia in kg*m^2 (diagonal tensor [Ixx, Iyy, Izz]) -->
-            <Inertia>
-                <Ixx>5.0</Ixx>
-                <Iyy>5.0</Iyy>
-                <Izz>10.0</Izz>
-            </Inertia>
+            <inertia>
+                <ixx>5.0</ixx>
+                <iyy>5.0</iyy>
+                <izz>10.0</izz>
+            </inertia>
 
             <!-- Initial position in millimetres (mm), expressed in the TARGET reference frame -->
             <!-- (origin at target docking port; +X docking axis, +Y up, +Z right). -->
             <!-- Chaser starts along -X axis separated by 3000 mm (3 m) -->
-            <InitialPosition>
-                <X>-3000.0</X>
-                <Y>0.0</Y>
-                <Z>0.0</Z>
-            </InitialPosition>
+            <initialposition>
+                <x>-3000.0</x>
+                <y>0.0</y>
+                <z>0.0</z>
+            </initialposition>
 
             <!-- Initial linear velocity in m/s -->
             <!-- Positive Vx represents closing approach velocity towards target -->
-            <InitialVelocity>
-                <Vx>0.05</Vx>
-                <Vy>0.0</Vy>
-                <Vz>0.0</Vz>
-            </InitialVelocity>
-        </Chaser>
+            <initialvelocity>
+                <vx>0.05</vx>
+                <vy>0.0</vy>
+                <vz>0.0</vz>
+            </initialvelocity>
+        </chaser>
 
         <!-- Target Spacecraft (Passive / Station Vehicle) -->
-        <Target>
+        <target>
             <!-- Spacecraft mass in kilograms -->
-            <MassKg>100.0</MassKg>
+            <masskg>100.0</masskg>
 
             <!-- Principal moments of inertia in kg*m^2 -->
-            <Inertia>
-                <Ixx>10.0</Ixx>
-                <Iyy>10.0</Iyy>
-                <Izz>20.0</Izz>
-            </Inertia>
+            <inertia>
+                <ixx>10.0</ixx>
+                <iyy>10.0</iyy>
+                <izz>20.0</izz>
+            </inertia>
 
             <!-- Target position in mm; it is the origin of the target reference frame (0,0,0) -->
             <!-- NOTE: currently informational only; the engine fixes the target at the origin. -->
-            <InitialPosition>
-                <X>0.0</X>
-                <Y>0.0</Y>
-                <Z>0.0</Z>
-            </InitialPosition>
+            <initialposition>
+                <x>0.0</x>
+                <y>0.0</y>
+                <z>0.0</z>
+            </initialposition>
 
             <!-- Target initial linear velocity in m/s (station-keeping at 0 m/s) -->
-            <InitialVelocity>
-                <Vx>0.0</Vx>
-                <Vy>0.0</Vy>
-                <Vz>0.0</Vz>
-            </InitialVelocity>
-        </Target>
-    </Spacecraft>
+            <initialvelocity>
+                <vx>0.0</vx>
+                <vy>0.0</vy>
+                <vz>0.0</vz>
+            </initialvelocity>
+        </target>
+    </spacecraft>
 
     <!-- ===================================================================== -->
     <!-- Hardware-in-the-Loop (HIL) Stewart Platform Mounting Mapping          -->
     <!-- ===================================================================== -->
-    <Platform>
+    <platform>
         <!-- 
             Frame Mapping Mode:
-            - DEFAULT: Chaser mounted on Ground Stewart Platform (GSP), 
+            - default: Chaser mounted on Ground Stewart Platform (GSP), 
                        Target mounted on Flight Stewart Platform (FSP).
-            - FLIPPED: Target mounted on Ground Stewart Platform (GSP), 
+            - flipped: Target mounted on Ground Stewart Platform (GSP), 
                        Chaser mounted on Flight Stewart Platform (FSP).
         -->
-        <FrameMapping>DEFAULT</FrameMapping>
-    </Platform>
+        <framemapping>default</framemapping>
+    </platform>
 
     <!-- ===================================================================== -->
     <!-- Simulation Logging & Output Provision                                 -->
@@ -91,21 +91,21 @@
         Configures where simulation state outputs (relative pose, velocities,
         thruster forces, and timestamped telemetry) will be written.
     -->
-    <Logging>
+    <logging>
         <!-- Enable or disable disk logging (true / false) -->
-        <Enabled>true</Enabled>
+        <enabled>true</enabled>
 
         <!-- Output directory where log files will be saved -->
-        <LogDirectory>logs</LogDirectory>
+        <logdirectory>logs</logdirectory>
 
         <!-- Primary output log file name for trajectory state recording -->
-        <LogFileName>simulation_trajectory.csv</LogFileName>
+        <logfilename>simulation_trajectory.csv</logfilename>
 
         <!-- 
             Logging decimation rate: 
             Specifies how often output is recorded from the 1000 Hz physics loop.
             e.g. 10 = records every 10 ms (100 Hz output data rate).
         -->
-        <LogDecimation>10</LogDecimation>
-    </Logging>
-</SimulationConfig>
+        <logdecimation>10</logdecimation>
+    </logging>
+</simulationconfig>

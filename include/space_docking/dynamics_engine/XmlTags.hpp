@@ -10,40 +10,43 @@
 namespace space_docking::dynamics::xml_tags
 {
 	// Spacecraft blocks
-	constexpr const char* kChaser          = "Chaser";
-	constexpr const char* kTarget          = "Target";
-	constexpr const char* kMassKg          = "MassKg";
-	constexpr const char* kInertia         = "Inertia";
-	constexpr const char* kIxx             = "Ixx";
-	constexpr const char* kIyy             = "Iyy";
-	constexpr const char* kIzz             = "Izz";
-	constexpr const char* kInitialPosition = "InitialPosition";
-	constexpr const char* kInitialVelocity = "InitialVelocity";
-	constexpr const char* kX               = "X";
-	constexpr const char* kY               = "Y";
-	constexpr const char* kZ               = "Z";
-	constexpr const char* kVx              = "Vx";
-	constexpr const char* kVy              = "Vy";
-	constexpr const char* kVz              = "Vz";
+	constexpr const char* kChaser          = "chaser";
+	constexpr const char* kTarget          = "target";
+	constexpr const char* kMassKg          = "masskg";
+	constexpr const char* kInertia         = "inertia";
+	constexpr const char* kIxx             = "ixx";
+	constexpr const char* kIyy             = "iyy";
+	constexpr const char* kIzz             = "izz";
+	constexpr const char* kInitialPosition = "initialposition";
+	constexpr const char* kInitialVelocity = "initialvelocity";
+	constexpr const char* kX               = "x";
+	constexpr const char* kY               = "y";
+	constexpr const char* kZ               = "z";
+	constexpr const char* kVx              = "vx";
+	constexpr const char* kVy              = "vy";
+	constexpr const char* kVz              = "vz";
 
 	// Platform block
-	constexpr const char* kPlatform        = "Platform";
-	constexpr const char* kFrameMapping    = "FrameMapping";
+	constexpr const char* kPlatform        = "platform";
+	constexpr const char* kFrameMapping    = "framemapping";
 
 	// Logging block
-	constexpr const char* kLogging         = "Logging";
-	constexpr const char* kEnabled         = "Enabled";
-	constexpr const char* kLogDirectory    = "LogDirectory";
-	constexpr const char* kLogFileName     = "LogFileName";
-	constexpr const char* kLogDecimation   = "LogDecimation";
+	constexpr const char* kLogging         = "logging";
+	constexpr const char* kEnabled         = "enabled";
+	constexpr const char* kLogDirectory    = "logdirectory";
+	constexpr const char* kLogFileName     = "logfilename";
+	constexpr const char* kLogDecimation   = "logdecimation";
 }
 
 namespace space_docking::dynamics::xml_values
 {
-	// <FrameMapping> values
-	constexpr const char* kFrameMappingFlipped = "FLIPPED";
+	// <framemapping> values
+	constexpr const char* kFrameMappingDefault = "default";
+	constexpr const char* kFrameMappingFlipped = "flipped";
 
-	// <Enabled> values
+	// <enabled> values
 	constexpr const char* kTrue                = "true";
+	constexpr const char* kFalse               = "false";
 	constexpr const char* kOne                 = "1";
+	constexpr const char* kZero                = "0";
 }
