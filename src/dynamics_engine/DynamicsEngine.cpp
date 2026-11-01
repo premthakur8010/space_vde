@@ -43,6 +43,32 @@ namespace space_docking::dynamics
 		m_latestPoses = m_poseComputation.compute(chaserState, targetState, m_latestGspFeedback);
 		m_initialized = true;
 
+		// Initialize CSV telemetry logger and decimation accumulator
+		m_stepCount = 0;
+		m_simTime = 0.0;
+		m_accumulator = TelemetryAccumulator(config.logDecimation);
+		m_accumulator.reset(m_latestRelativeState.pose);
+
+		if (config.loggingEnabled && !config.logFileName.empty())
+		{
+			std::string fullPath = config.logDirectory;
+			if (!fullPath.empty() && fullPath.back() != '/' && fullPath.back() != '\\')
+			{
+				fullPath += "/";
+			}
+			fullPath += config.logFileName;
+
+			const ErrorCode ecLog = m_csvLogger.open(fullPath);
+			if (ecLog != ErrorCode::OK)
+			{
+				SD_LOG_ERROR(ecLog, "Failed to open CSV trajectory log: " << fullPath);
+			}
+			else
+			{
+				SD_LOG_INFO("CSV telemetry logger active: " << fullPath << " (rate: every " << config.logDecimation << " ms)");
+			}
+		}
+
 		SD_LOG_INFO("DynamicsEngine successfully initialized with 2 spacecraft bodies");
 		return ErrorCode::OK;
 	}
@@ -85,6 +111,21 @@ namespace space_docking::dynamics
 		// 5. Compute relative docking state Y
 		m_latestRelativeState = m_relativeKinematics.compute(chaserState, targetState);
 
+		m_stepCount++;
+		m_simTime += dt;
+
+		// 6. Accumulate and log telemetry asynchronously for 3D visualization replay (every 10 ms)
+		if (m_config.loggingEnabled && m_csvLogger.isOpen())
+		{
+			m_accumulator.addSample(chaserState, targetState, m_latestRelativeState);
+
+			if (m_accumulator.isReady())
+			{
+				const TelemetryLogEntry entry = m_accumulator.computeNetEntryAndAdvance(m_simTime, m_stepCount);
+				m_csvLogger.log(entry);
+			}
+		}
+
 		return ErrorCode::OK;
 	}
 
@@ -121,5 +162,30 @@ namespace space_docking::dynamics
 	const std::array<Pose, 2>& DynamicsEngine::getPoses() const noexcept
 	{
 		return m_latestPoses;
+	}
+
+	void DynamicsEngine::flushLogs() noexcept
+	{
+		m_csvLogger.flush();
+	}
+
+	CsvLogger& DynamicsEngine::getCsvLogger() noexcept
+	{
+		return m_csvLogger;
+	}
+
+	const CsvLogger& DynamicsEngine::getCsvLogger() const noexcept
+	{
+		return m_csvLogger;
+	}
+
+	uint64_t DynamicsEngine::getStepCount() const noexcept
+	{
+		return m_stepCount;
+	}
+
+	double DynamicsEngine::getSimTime() const noexcept
+	{
+		return m_simTime;
 	}
 }

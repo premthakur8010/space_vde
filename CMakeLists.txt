@@ -61,6 +61,7 @@ add_library(space_docking_dynamics_engine STATIC
 	src/dynamics_engine/SpacecraftPoseComputation.cpp
 	src/dynamics_engine/DynamicsEngine.cpp
 	src/dynamics_engine/XmlConfigLoader.cpp
+	src/dynamics_engine/CsvLogger.cpp
 )
 target_include_directories(space_docking_dynamics_engine PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -103,3 +104,7 @@ add_test(NAME ProtocolTest COMMAND test_protocol)
 add_executable(test_dynamics_engine_base tests/unit/TestDynamicsEngineBase.cpp)
 target_link_libraries(test_dynamics_engine_base PRIVATE space_docking_dynamics_engine)
 add_test(NAME DynamicsEngineBaseTest COMMAND test_dynamics_engine_base)
+
+add_executable(test_csv_logger tests/unit/TestCsvLogger.cpp)
+target_link_libraries(test_csv_logger PRIVATE space_docking_dynamics_engine)
+add_test(NAME CsvLoggerTest COMMAND test_csv_logger)

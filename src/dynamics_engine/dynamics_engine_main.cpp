@@ -116,6 +116,7 @@ int main(int argc, char** argv)
 	}
 
 	std::cout << "\nDynamics Engine cleanly stopped after " << stepCount << " cycles (" << (stepCount * dt) << " seconds)." << std::endl;
+	engine.flushLogs();
 
 #if defined(_WIN32)
 	timeEndPeriod(1);

@@ -71,7 +71,11 @@ namespace space_docking::dynamics
 		TIMEOUT = -50,
 		REALTIME_DEADLINE_MISSED = -51,
 		NETWORK_ERROR = -60,
-		SOCKET_BIND_FAILED = -61
+		SOCKET_BIND_FAILED = -61,
+
+		// Logging & File I/O Status Codes
+		FILE_OPEN_FAILED = -70,  ///< Could not create or open destination file on disk
+		LOG_WRITE_FAILED = -71   ///< Disk write error or I/O failure during telemetry recording
 	};
 
 	/**
@@ -105,6 +109,8 @@ namespace space_docking::dynamics
 			case ErrorCode::REALTIME_DEADLINE_MISSED: return "REALTIME_DEADLINE_MISSED";
 			case ErrorCode::NETWORK_ERROR: return "NETWORK_ERROR";
 			case ErrorCode::SOCKET_BIND_FAILED: return "SOCKET_BIND_FAILED";
+			case ErrorCode::FILE_OPEN_FAILED: return "FILE_OPEN_FAILED";
+			case ErrorCode::LOG_WRITE_FAILED: return "LOG_WRITE_FAILED";
 		}
 		return "UNKNOWN_ERROR_CODE";
 	}

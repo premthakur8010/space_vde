@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "space_docking/dynamics_engine/CsvLogger.hpp"
 #include "space_docking/dynamics_engine/FrameTransformation.hpp"
 #include "space_docking/dynamics_engine/RelativeKinematics.hpp"
 #include "space_docking/dynamics_engine/SpacecraftDynamics.hpp"
@@ -47,6 +48,16 @@ namespace space_docking::dynamics
 		[[nodiscard]] const RelativeState& getRelativeState() const noexcept;
 		[[nodiscard]] const std::array<Pose, 2>& getPoses() const noexcept;
 
+		/**
+		 * @brief Flush all queued CSV telemetry log entries to disk.
+		 */
+		void flushLogs() noexcept;
+
+		[[nodiscard]] CsvLogger& getCsvLogger() noexcept;
+		[[nodiscard]] const CsvLogger& getCsvLogger() const noexcept;
+		[[nodiscard]] uint64_t getStepCount() const noexcept;
+		[[nodiscard]] double getSimTime() const noexcept;
+
 	private:
 		RunConfig m_config{};
 		bool m_initialized{false};
@@ -64,5 +75,10 @@ namespace space_docking::dynamics
 
 		RelativeState m_latestRelativeState{};
 		std::array<Pose, 2> m_latestPoses{};
+
+		CsvLogger m_csvLogger{};
+		TelemetryAccumulator m_accumulator{};
+		uint64_t m_stepCount{0};
+		double m_simTime{0.0};
 	};
 }
