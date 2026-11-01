@@ -23,11 +23,11 @@ To fulfill these requirements without introducing real-time latency or disk jitt
 
 ---
 
-## 2. Key Distinction: `EngineLogger` vs. `CsvLogger`
+## 2. Key Distinction: Code-Level Diagnostics vs. Telemetry Logging
 
 A common question is why two different loggers exist in the architecture:
 
-| Feature / Property | Code-Level Diagnostic Logger (`EngineLogger` / `Logger.hpp`) | Telemetry Trajectory Logger (`CsvLogger.hpp` / `CsvLogger.cpp`) |
+| Feature / Property | Code-Level Diagnostic Logger (`Logger.hpp` / `LogMacros.hpp`) | Telemetry Trajectory Logger (`CsvLogger.hpp` / `CsvLogger.cpp`) |
 | :--- | :--- | :--- |
 | **Primary Purpose** | Diagnostic, error, and lifecycle event logging. | High-frequency numerical trajectory logging for 3D replay. |
 | **Data Format** | Human-readable text strings: `[ERROR] [ErrorCode: -10] Failed to load XML`. | Pure tabular CSV: comma-separated floating-point numbers. |

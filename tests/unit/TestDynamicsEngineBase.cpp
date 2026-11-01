@@ -1,5 +1,4 @@
 #include "space_docking/dynamics_engine/DynamicsEngine.hpp"
-#include "space_docking/dynamics_engine/EngineLogger.hpp"
 #include "space_docking/dynamics_engine/FrameTransformation.hpp"
 #include "space_docking/dynamics_engine/RelativeKinematics.hpp"
 #include "space_docking/dynamics_engine/SpacecraftDynamics.hpp"
