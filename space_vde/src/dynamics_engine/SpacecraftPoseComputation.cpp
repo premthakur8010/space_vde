@@ -11,7 +11,22 @@ namespace space_docking::dynamics
 	                                                       const BodyState& t,
 	                                                       const GspFeedback& f) const noexcept
 	{
-		(void)f;
+		// If physical Stewart platform feedback is present (valid orientation norm),
+		// integrate the measured platform pose offset with the target pose.
+		const double qNormSq = f.pose.orientation.w * f.pose.orientation.w +
+		                       f.pose.orientation.x * f.pose.orientation.x +
+		                       f.pose.orientation.y * f.pose.orientation.y +
+		                       f.pose.orientation.z * f.pose.orientation.z;
+
+		if (qNormSq > 0.1)
+		{
+			Pose targetWithPlatform = t.pose;
+			targetWithPlatform.position.x += f.pose.position.x;
+			targetWithPlatform.position.y += f.pose.position.y;
+			targetWithPlatform.position.z += f.pose.position.z;
+			return std::array<Pose, 2>{c.pose, targetWithPlatform};
+		}
+
 		return std::array<Pose, 2>{c.pose, t.pose};
 	}
 }

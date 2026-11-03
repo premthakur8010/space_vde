@@ -360,7 +360,7 @@ void drawAxisTriad(Painter& painter, const glm::mat4& frame, float length, const
 // ============================================================================
 
 namespace {
-constexpr float kBaseTop = 0.12f, kPlatformNominal = 1.10f, kOverheadZ = 3.20f;
+constexpr float kBaseTop = 0.12f, kPlatformNominal = 1.10f, kOverheadZ = 2.89f;
 constexpr float kBaseAnchorR = 0.85f, kPlatAnchorR = 0.52f;
 
 // Computes a circular actuator joint anchor point in cylindrical coordinates.

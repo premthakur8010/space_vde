@@ -73,6 +73,35 @@ namespace space_docking::dynamics
 		return ErrorCode::OK;
 	}
 
+	ErrorCode DynamicsEngine::updateParameters(double chaserMass, const Matrix3& chaserInertia,
+	                                           double targetMass, const Matrix3& targetInertia,
+	                                           FrameMapping frameMapping)
+	{
+		ErrorCode ec = m_chaser.setup(chaserMass, chaserInertia);
+		if (ec != ErrorCode::OK)
+		{
+			SD_LOG_ERROR(ec, "Failed to update Chaser dynamics parameters");
+			return ec;
+		}
+
+		ec = m_target.setup(targetMass, targetInertia);
+		if (ec != ErrorCode::OK)
+		{
+			SD_LOG_ERROR(ec, "Failed to update Target dynamics parameters");
+			return ec;
+		}
+
+		m_config.chaserMass = chaserMass;
+		m_config.chaserInertia = chaserInertia;
+		m_config.targetMass = targetMass;
+		m_config.targetInertia = targetInertia;
+		m_config.frameMapping = frameMapping;
+
+		m_frameTransform.setFlipMode(frameMapping);
+		SD_LOG_INFO("DynamicsEngine parameters dynamically updated without resetting trajectory state");
+		return ErrorCode::OK;
+	}
+
 	ErrorCode DynamicsEngine::step(double dt)
 	{
 		if (!m_initialized)
@@ -189,3 +218,5 @@ namespace space_docking::dynamics
 		return m_simTime;
 	}
 }
+
+

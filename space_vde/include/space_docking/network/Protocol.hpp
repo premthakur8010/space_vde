@@ -79,6 +79,7 @@ namespace space_docking::network
 	// =========================================================================
 	// VDE Docking Simulator Wire Protocol (for ui-space-docking-system-refactored)
 	// =========================================================================
+#pragma pack(push, 1)
 	namespace vde_net
 	{
 		inline constexpr const char*   kDefaultHost       = "127.0.0.1";
@@ -154,5 +155,9 @@ namespace space_docking::network
 			char            ngcMode[64]        = {};
 			char            ngcFailureCase[64] = {};
 		};
+
+		static_assert(sizeof(RunConfigPacket) == 261, "RunConfigPacket must be exactly 261 bytes");
+		static_assert(sizeof(StatePacket) == 1049, "StatePacket must be exactly 1049 bytes");
 	}
+#pragma pack(pop)
 }

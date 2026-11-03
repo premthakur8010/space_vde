@@ -34,6 +34,8 @@ enum class ErrorCode : std::int32_t { Ok = 0, SocketError, BindError, SendError,
 // Selects standard or inverted coordinate-frame mapping between spacecraft and VDE hardware.
 enum class FrameMapping : std::int32_t { Default = 0, Flipped = 1 };
 
+#pragma pack(push, 1)
+
 // 3D Cartesian vector used for positions, velocities, forces, torques, and centres of gravity.
 struct Vec3 { double x = 0.0, y = 0.0, z = 0.0; };
 
@@ -229,7 +231,11 @@ struct StatePacket {
 	char            ngcMode[64]        = {};
 	char            ngcFailureCase[64] = {};
 };
+
+static_assert(sizeof(RunConfigPacket) == 261, "RunConfigPacket must be exactly 261 bytes");
+static_assert(sizeof(StatePacket) == 1049, "StatePacket must be exactly 1049 bytes");
 } // namespace net
+#pragma pack(pop)
 
 // Manages non-blocking UDP communication with the external Dynamics Engine server.
 // Sends RunConfigPacket datagrams on the config port and drains incoming StatePacket
@@ -434,3 +440,6 @@ private:
 };
 
 } // namespace vde
+
+
+

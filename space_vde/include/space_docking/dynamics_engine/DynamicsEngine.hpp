@@ -33,6 +33,13 @@ namespace space_docking::dynamics
 		ErrorCode initialize(const RunConfig& config);
 
 		/**
+		 * @brief Update physical mass, inertia, and frame mapping dynamically without resetting trajectory.
+		 */
+		ErrorCode updateParameters(double chaserMass, const Matrix3& chaserInertia,
+		                           double targetMass, const Matrix3& targetInertia,
+		                           FrameMapping frameMapping);
+
+		/**
 		 * @brief Execute one physics cycle step.
 		 * @param dt Step size in seconds (e.g. 0.001 s for 1 kHz).
 		 */
@@ -82,3 +89,5 @@ namespace space_docking::dynamics
 		double m_simTime{0.0};
 	};
 }
+
+

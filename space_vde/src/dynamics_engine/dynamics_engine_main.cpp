@@ -12,6 +12,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
+#include <algorithm>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -45,15 +47,40 @@ int main(int argc, char** argv)
 	timeBeginPeriod(1);
 #endif
 	std::string configPath = "config/simulation_config.xml";
-	if (argc > 1)
+	std::string targetHost = space_docking::network::vde_net::kDefaultHost; // 127.0.0.1
+	uint16_t statePort = space_docking::network::vde_net::kDefaultStatePort; // 5002
+	uint16_t configPort = space_docking::network::vde_net::kDefaultConfigPort; // 5001
+
+	for (int i = 1; i < argc; ++i)
 	{
-		configPath = argv[1];
+		if (std::strcmp(argv[i], "--target-ip") == 0 && i + 1 < argc)
+		{
+			targetHost = argv[++i];
+		}
+		else if (std::strcmp(argv[i], "--state-port") == 0 && i + 1 < argc)
+		{
+			statePort = static_cast<uint16_t>(std::atoi(argv[++i]));
+		}
+		else if (std::strcmp(argv[i], "--config-port") == 0 && i + 1 < argc)
+		{
+			configPort = static_cast<uint16_t>(std::atoi(argv[++i]));
+		}
+		else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)
+		{
+			configPath = argv[++i];
+		}
+		else if (argv[i][0] != '-')
+		{
+			configPath = argv[i];
+		}
 	}
 
 	std::cout << "========================================================\n";
 	std::cout << " Space Docking Dynamics Engine (GSP/FSP HIL Simulation) \n";
 	std::cout << "========================================================\n";
-	std::cout << "Loading configuration: " << configPath << "\n";
+	std::cout << "Configuration file : " << configPath << "\n";
+	std::cout << "Target UI endpoint : " << targetHost << ":" << statePort << "\n";
+	std::cout << "Config listen port : " << configPort << "\n";
 
 	space_docking::dynamics::RunConfig config{};
 	// 1. Load XML configuration file and handle potential configuration errors
@@ -111,21 +138,21 @@ int main(int argc, char** argv)
 	{
 		configReceiver.setNonBlocking(true);
 		configReceiver.setReuseAddr(true);
-		if (!configReceiver.bindSocket(space_docking::network::vde_net::kDefaultConfigPort, "0.0.0.0"))
+		if (!configReceiver.bindSocket(configPort, "0.0.0.0"))
 		{
 			SD_LOG_ERROR(space_docking::dynamics::ErrorCode::SOCKET_BIND_FAILED,
-			             "Failed to bind configReceiver to port " << space_docking::network::vde_net::kDefaultConfigPort);
+			             "Failed to bind configReceiver to port " << configPort);
 		}
 		else
 		{
-			SD_LOG_INFO("Config receiver active on port " << space_docking::network::vde_net::kDefaultConfigPort);
+			SD_LOG_INFO("Config receiver active on port " << configPort);
 		}
 	}
 
 	std::signal(SIGINT, signalHandler);
 
-	std::cout << "Starting 1 ms cyclic simulation loop with UDP streaming on port "
-	          << space_docking::network::vde_net::kDefaultStatePort << ". Press Ctrl+C to terminate." << std::endl;
+	std::cout << "Starting 1 ms cyclic simulation loop with UDP streaming to "
+	          << targetHost << ":" << statePort << " (125 Hz). Press Ctrl+C to terminate." << std::endl;
 
 	uint64_t stepCount = 0;
 	constexpr double dt = 0.001; // 1 ms physics period
@@ -144,12 +171,19 @@ int main(int argc, char** argv)
 			SD_LOG_INFO("Received RunConfig over UDP: Chaser Mass=" << cfgPkt.chaserMassKg
 			            << " kg, Target Mass=" << cfgPkt.targetMassKg
 			            << " kg, FrameMapping=" << cfgPkt.frameMapping);
-			config.chaserMass = cfgPkt.chaserMassKg;
-			config.targetMass = cfgPkt.targetMassKg;
-			config.chaserInertia.m = cfgPkt.chaserInertia.m;
-			config.targetInertia.m = cfgPkt.targetInertia.m;
-			config.frameMapping = (cfgPkt.frameMapping == 1) ? space_docking::dynamics::FrameMapping::FLIPPED : space_docking::dynamics::FrameMapping::DEFAULT;
-			engine.initialize(config);
+
+			space_docking::dynamics::Matrix3 chInertia;
+			chInertia.m = cfgPkt.chaserInertia.m;
+			space_docking::dynamics::Matrix3 tgtInertia;
+			tgtInertia.m = cfgPkt.targetInertia.m;
+			const auto frameMapping = (cfgPkt.frameMapping == 1)
+			    ? space_docking::dynamics::FrameMapping::FLIPPED
+			    : space_docking::dynamics::FrameMapping::DEFAULT;
+
+			// Safely update runtime physical parameters without resetting active trajectory or desyncing clocks
+			engine.updateParameters(cfgPkt.chaserMassKg, chInertia,
+			                        cfgPkt.targetMassKg, tgtInertia,
+			                        frameMapping);
 		}
 
 		engine.step(dt);
@@ -200,14 +234,44 @@ int main(int argc, char** argv)
 			pkt.target.eciOrientationRad = { targetEuler.roll, targetEuler.pitch, targetEuler.yaw };
 			pkt.target.eciOrientationRateRadS = { targetState.angularRate.x, targetState.angularRate.y, targetState.angularRate.z };
 
-			// VDE Stewart Platform hardware representation
+			// VDE Stewart Platform hardware representation:
+			// In the VDE facility, the vertical axis (+Z) is the docking approach axis towards the overhead gantry.
+			// Spacecraft Line-of-Sight approach (+X) maps to VDE vertical stroke (+Z, 0.0 to 0.550 m).
+			// Spacecraft lateral misalignments (+Y, +Z) map to VDE horizontal platform displacement (+X, +Y, +/-0.100 m).
 			const auto relEuler = rel.toEuler();
-			pkt.vde.positionM = { rel.pose.position.x, rel.pose.position.y, rel.pose.position.z };
-			pkt.vde.linearRateMS = { rel.velocity.x, rel.velocity.y, rel.velocity.z };
-			pkt.vde.orientationRad = { relEuler.roll, relEuler.pitch, relEuler.yaw };
-			pkt.vde.orientationRateRadS = { chaserState.angularRate.x - targetState.angularRate.x,
-			                               chaserState.angularRate.y - targetState.angularRate.y,
-			                               chaserState.angularRate.z - targetState.angularRate.z };
+			const double initX = config.initialSeparation.position.x;
+			double vdeZ = 0.0;
+			double vdeVz = 0.0;
+			if (std::abs(initX) > 1e-4)
+			{
+				const double progress = std::clamp((rel.pose.position.x - initX) / (0.0 - initX), 0.0, 1.0);
+				vdeZ = progress * 0.550; // physical stroke: 0.0 to 550 mm
+				vdeVz = (rel.velocity.x / (0.0 - initX)) * 0.550;
+			}
+			else
+			{
+				vdeZ = std::clamp(0.550 + rel.pose.position.x, 0.0, 0.550);
+				vdeVz = rel.velocity.x;
+			}
+
+			const double vdeX = std::clamp(rel.pose.position.y, -0.100, 0.100);
+			const double vdeY = std::clamp(rel.pose.position.z, -0.100, 0.100);
+			const double vdeVx = rel.velocity.y;
+			const double vdeVy = rel.velocity.z;
+
+			// Angular attitude mapped to Stewart platform physical limits (Roll/Pitch +/-5 deg, Yaw +/-10 deg)
+			const double vdeRoll  = std::clamp(relEuler.pitch, -0.087, 0.087);
+			const double vdePitch = std::clamp(relEuler.yaw,   -0.087, 0.087);
+			const double vdeYaw   = std::clamp(relEuler.roll,  -0.174, 0.174);
+
+			const double vdeRollRate  = chaserState.angularRate.y - targetState.angularRate.y;
+			const double vdePitchRate = chaserState.angularRate.z - targetState.angularRate.z;
+			const double vdeYawRate   = chaserState.angularRate.x - targetState.angularRate.x;
+
+			pkt.vde.positionM = { vdeX, vdeY, vdeZ };
+			pkt.vde.linearRateMS = { vdeVx, vdeVy, vdeVz };
+			pkt.vde.orientationRad = { vdeRoll, vdePitch, vdeYaw };
+			pkt.vde.orientationRateRadS = { vdeRollRate, vdePitchRate, vdeYawRate };
 			// ForceTorque: torque first, force second!
 			pkt.vde.moving = { {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0} };
 			pkt.vde.overhead = { {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0} };
@@ -219,7 +283,7 @@ int main(int argc, char** argv)
 			std::snprintf(pkt.ngcMode, sizeof(pkt.ngcMode), "FINAL APPROACH (closing)");
 			std::snprintf(pkt.ngcFailureCase, sizeof(pkt.ngcFailureCase), "None (nominal)");
 
-			stateSender.sendTo(&pkt, sizeof(pkt), space_docking::network::vde_net::kDefaultHost, space_docking::network::vde_net::kDefaultStatePort);
+			stateSender.sendTo(&pkt, sizeof(pkt), targetHost.c_str(), statePort);
 		}
 
 		// Print trajectory update every 500 ms (500 steps)
@@ -235,10 +299,19 @@ int main(int argc, char** argv)
 			          << euler.yaw << " rad" << std::endl;
 		}
 
-		// High-precision wait to maintain exact 1 ms (1000 Hz) cyclic rate
-		while (std::chrono::steady_clock::now() - tickStart < std::chrono::microseconds(1000))
+		// High-precision hybrid wait to maintain exact 1 ms (1000 Hz) cyclic rate without pinning CPU at 100%
+		while (true)
 		{
-			std::this_thread::yield();
+			const auto elapsed = std::chrono::steady_clock::now() - tickStart;
+			if (elapsed >= std::chrono::microseconds(1000))
+			{
+				break;
+			}
+			const auto remaining = std::chrono::microseconds(1000) - elapsed;
+			if (remaining > std::chrono::microseconds(200))
+			{
+				std::this_thread::yield();
+			}
 		}
 	}
 
@@ -250,3 +323,4 @@ int main(int argc, char** argv)
 #endif
 	return 0;
 }
+
