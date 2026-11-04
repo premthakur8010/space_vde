@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "space_docking/dynamics_engine/Types.hpp"
+#include "Types.hpp"
 #include <string>
 
 namespace space_docking::dynamics

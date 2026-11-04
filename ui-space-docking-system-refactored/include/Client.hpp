@@ -1,9 +1,14 @@
 // =============================================================================
 // include/Client.hpp
-// Declares simulation math primitives, SI-to-display unit conversions, telemetry
-// snapshot structures, the binary UDP packet protocol, the non-blocking UDP
-// VisualizationClient, the plottable ParameterRegistry, replay/recording helpers,
-// and the central AppState coordinator.
+// Declares SI-to-display unit conversions, telemetry snapshot structures,
+// the binary UDP packet protocol, the non-blocking UDP VisualizationClient,
+// the plottable ParameterRegistry, replay/recording helpers, and the central
+// AppState coordinator.
+//
+// DESIGN PRINCIPLE: Single Source of Truth
+// Mathematical types (Vec3, Rpy, Mat3, Quaternion, ForceTorque, Pose, RelativeState,
+// VdeState, SpacecraftState) and UDP wire packets (RunConfigPacket, StatePacket)
+// are defined canonically in the Space Docking Dynamics Engine and Network headers.
 // =============================================================================
 #pragma once
 
@@ -19,6 +24,9 @@
 #include <variant>
 #include <vector>
 
+#include "space_docking/network/Protocol.hpp"
+#include "space_docking/utils/MathUtils.hpp"
+
 namespace vde {
 
 // ============================================================================
@@ -31,67 +39,16 @@ inline constexpr double kUiRateHz = 120.0;
 // Status codes returned by UDP socket setup and packet transmission calls.
 enum class ErrorCode : std::int32_t { Ok = 0, SocketError, BindError, SendError, InvalidConfig };
 
-// Selects standard or inverted coordinate-frame mapping between spacecraft and VDE hardware.
-enum class FrameMapping : std::int32_t { Default = 0, Flipped = 1 };
-
-#pragma pack(push, 1)
-
-// 3D Cartesian vector used for positions, velocities, forces, torques, and centres of gravity.
-struct Vec3 { double x = 0.0, y = 0.0, z = 0.0; };
-
-// Intrinsic Roll-Pitch-Yaw Euler angles (stored in radians internally, displayed in degrees).
-struct Rpy  { double roll = 0.0, pitch = 0.0, yaw = 0.0; };
-
-// 3x3 matrix in row-major order (linear array of 9 doubles, matching space_vde).
-struct Mat3 {
-	std::array<double, 9> m{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
-	constexpr Mat3() noexcept = default;
-	constexpr Mat3(const std::array<double, 9>& elements) noexcept : m(elements) {}
-};
-
-// Combined 6-DOF Torque and Force structure (torque stored first, matching space_vde).
-struct ForceTorque {
-	Vec3 torque{};
-	Vec3 force{};
-};
-
-// Unit quaternion following standard space_vde scalar-first convention: q(w, x, y, z).
-struct Quaternion {
-	double w = 1.0, x = 0.0, y = 0.0, z = 0.0; // scalar-first (w, x, y, z)
-
-	// Converts ZYX Roll-Pitch-Yaw Euler angles (radians) into a unit quaternion.
-	static Quaternion fromRpy(const Rpy& r) {
-		const double cr = std::cos(r.roll * 0.5),  sr = std::sin(r.roll * 0.5);
-		const double cp = std::cos(r.pitch * 0.5), sp = std::sin(r.pitch * 0.5);
-		const double cy = std::cos(r.yaw * 0.5),   sy = std::sin(r.yaw * 0.5);
-		return {cr * cp * cy + sr * sp * sy,
-		        sr * cp * cy - cr * sp * sy,
-		        cr * sp * cy + sr * cp * sy,
-		        cr * cp * sy - sr * sp * cy};
-	}
-
-	// Extracts Roll-Pitch-Yaw Euler angles (radians) from this unit quaternion, clamping pitch to avoid NaN.
-	Rpy toRpy() const {
-		Rpy r;
-		r.yaw = std::atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z));
-		const double sinp = 2.0 * (w * y - z * x);
-		if (std::abs(sinp) >= 1.0)
-			r.pitch = std::copysign(std::numbers::pi / 2.0, sinp);
-		else
-			r.pitch = std::asin(sinp);
-		r.roll = std::atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y));
-		return r;
-	}
-};
-
-// Relative 6-DOF pose and rate state between the Chaser and Target docking frames.
-struct RelativeState {
-	Quaternion orientation;
-	Vec3       positionM;
-	Quaternion orientationRate;
-	Vec3       velocityMS;
-	Rpy toEuler() const { return orientation.toRpy(); }
-};
+// Single-source-of-truth canonical types from space_docking
+using Vec3 = space_docking::dynamics::Vector3;
+using Rpy  = space_docking::dynamics::EulerAngles;
+using Mat3 = space_docking::dynamics::Matrix3;
+using ForceTorque = space_docking::dynamics::ForceTorque;
+using Quaternion = space_docking::dynamics::Quaternion;
+using RelativeState = space_docking::dynamics::RelativeState;
+using VdeState = space_docking::dynamics::VdeState;
+using SpacecraftState = space_docking::dynamics::SpacecraftState;
+using FrameMapping = space_docking::dynamics::FrameMapping;
 
 // Conversion factors and scaling helpers between internal SI units and UI display units.
 namespace units {
@@ -120,25 +77,6 @@ std::string fileNameOf(const std::string& path);  // Extracts the base filename 
 // ============================================================================
 // Telemetry Snapshots & Run Configuration
 // ============================================================================
-
-// Kinematics and contact/actuator loads of the physical VDE Stewart platform and overhead gantry.
-struct VdeState {
-	Vec3        positionM, linearRateMS;
-	Rpy         orientationRad, orientationRateRadS;
-	ForceTorque moving;   // torque, then force (matching space_vde)
-	ForceTorque overhead; // torque, then force (matching space_vde)
-};
-
-// Mass properties, body-frame rates, and Earth-Centred Inertial (ECI) orbital state of a spacecraft.
-struct SpacecraftState {
-	double massKg = 0.0;
-	Vec3   cgM;
-	Mat3   inertiaKgM2;
-	Vec3   linearRateMS;
-	Rpy    orientationRateRadS;
-	Vec3   eciPositionM, eciVelocityMS;
-	Rpy    eciOrientationRad, eciOrientationRateRadS;
-};
 
 // Navigation, Guidance, and Control (NGC) mode, fault state, and commanded forces/torques.
 struct NgcState {
@@ -193,49 +131,8 @@ struct RunConfig {
 // ============================================================================
 
 namespace net {
-inline constexpr const char*   kDefaultHost       = "127.0.0.1";
-inline constexpr std::uint16_t kDefaultConfigPort = 5001; // Outbound: UI Client -> Dynamics Engine
-inline constexpr std::uint16_t kDefaultStatePort  = 5002; // Inbound:  Dynamics Engine -> UI Client
-inline constexpr std::uint32_t kProtocolMagic     = 0x56444531u; // ASCII "VDE1" packet identifier
-inline constexpr std::uint32_t kProtocolVersion   = 1u;
-
-// Fixed-layout binary datagram sent from the UI client to the Dynamics Engine to configure/start a run.
-struct RunConfigPacket {
-	std::uint32_t magic          = kProtocolMagic;
-	std::uint32_t version        = kProtocolVersion;
-	double        chaserMassKg   = 2150.0;
-	double        targetMassKg   = 7800.0;
-	Mat3          chaserInertia;
-	Mat3          targetInertia;
-	double        orbitRadiusM   = 6778.0e3;
-	double        inclinationRad = 0.0;
-	double        alongTrackSepM = -12.0;
-	std::int32_t  frameMapping   = 0;
-	std::uint8_t  disturbancesOn = 1;
-	char          ngcMode[64]    = {};
-};
-
-// Fixed-layout binary datagram streamed from the Dynamics Engine to the UI client each physics step.
-struct StatePacket {
-	std::uint32_t   magic          = kProtocolMagic;
-	std::uint32_t   version        = kProtocolVersion;
-	std::uint64_t   sequence       = 0;
-	double          timeS          = 0.0;
-	RelativeState   relative;
-	VdeState        vde;
-	SpacecraftState chaser;
-	SpacecraftState target;
-	ForceTorque     ngcChaser; // torque first, force second (matching space_vde)
-	ForceTorque     ngcTarget; // torque first, force second (matching space_vde)
-	std::uint8_t    disturbancesOn = 1;
-	char            ngcMode[64]        = {};
-	char            ngcFailureCase[64] = {};
-};
-
-static_assert(sizeof(RunConfigPacket) == 261, "RunConfigPacket must be exactly 261 bytes");
-static_assert(sizeof(StatePacket) == 1049, "StatePacket must be exactly 1049 bytes");
+	using namespace space_docking::network::vde_net;
 } // namespace net
-#pragma pack(pop)
 
 // Manages non-blocking UDP communication with the external Dynamics Engine server.
 // Sends RunConfigPacket datagrams on the config port and drains incoming StatePacket
@@ -440,6 +337,3 @@ private:
 };
 
 } // namespace vde
-
-
-

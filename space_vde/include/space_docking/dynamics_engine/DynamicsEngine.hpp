@@ -2,24 +2,31 @@
  * @file DynamicsEngine.hpp
  * @brief Central physics simulation coordinator for the Space Docking System.
  *
- * Coordinates execution of Chaser and Target 6-DOF dynamics, frame transformations,
- * relative docking kinematics, and platform pose computations at 1 kHz cycle frequency.
+ * Coordinates execution of Chaser and Target 6-DOF dynamics, relative docking kinematics,
+ * and platform pose computations at 1 kHz cycle frequency.
  */
 
 #pragma once
 
-#include "space_docking/dynamics_engine/CsvLogger.hpp"
-#include "space_docking/dynamics_engine/FrameTransformation.hpp"
-#include "space_docking/dynamics_engine/RelativeKinematics.hpp"
-#include "space_docking/dynamics_engine/SpacecraftDynamics.hpp"
-#include "space_docking/dynamics_engine/SpacecraftPoseComputation.hpp"
-#include "space_docking/dynamics_engine/Types.hpp"
+#include "CsvLogger.hpp"
+#include "RelativeKinematics.hpp"
+#include "SpacecraftDynamics.hpp"
+#include "SpacecraftPoseComputation.hpp"
+#include "Types.hpp"
 
 namespace space_docking::dynamics
 {
 	/**
 	 * @brief Central physics coordinator for the Dynamics Engine.
-	 * Executes on a dedicated cyclic thread.
+	 *
+	 * PIPELINE IN STEP(dt):
+	 * Each 1 ms cycle (1000 Hz) performs:
+	 * 1. Force Routing: Resolves load-cell forces based on FrameMapping (DEFAULT vs FLIPPED).
+	 * 2. Chaser Dynamics: Integrates 6-DOF translation and attitude via RK4 (SpacecraftDynamics::move).
+	 * 3. Target Dynamics: Integrates Target 6-DOF state via RK4 (SpacecraftDynamics::move).
+	 * 4. Platform Pose Computation: Blends physical testbed encoder feedback if active (SpacecraftPoseComputation::compute).
+	 * 5. Relative Kinematics: Computes 14-element state vector Y (RelativeKinematics::compute).
+	 * 6. Telemetry Decimation: Buffers high-rate telemetry into TelemetryAccumulator for CSV logging.
 	 */
 	class DynamicsEngine
 	{
@@ -50,6 +57,7 @@ namespace space_docking::dynamics
 		void setGspFeedback(const GspFeedback& f) noexcept;
 		void setGstFeedback(const GspFeedback& f) noexcept { setGspFeedback(f); }
 
+		[[nodiscard]] const RunConfig& getConfig() const noexcept { return m_config; }
 		[[nodiscard]] const SpacecraftDynamics& getChaser() const noexcept;
 		[[nodiscard]] const SpacecraftDynamics& getTarget() const noexcept;
 		[[nodiscard]] const RelativeState& getRelativeState() const noexcept;
@@ -72,7 +80,6 @@ namespace space_docking::dynamics
 		SpacecraftDynamics m_chaser{};
 		SpacecraftDynamics m_target{};
 
-		FrameTransformation m_frameTransform{};
 		RelativeKinematics m_relativeKinematics{};
 		SpacecraftPoseComputation m_poseComputation{};
 
@@ -89,5 +96,3 @@ namespace space_docking::dynamics
 		double m_simTime{0.0};
 	};
 }
-
-

@@ -5,16 +5,18 @@
 
 int main()
 {
-	using namespace space_docking::network;
+	using namespace space_docking::network::vde_net;
 
-	SnapshotMsg snapshot{};
-	assert(snapshot.magic == kSnapshotMsgMagic);
-	assert(snapshot.tick == 0);
+	RunConfigPacket cfg{};
+	assert(cfg.magic == kProtocolMagic);
+	assert(cfg.version == kProtocolVersion);
+	assert(sizeof(RunConfigPacket) == 261);
 
-	InputCommandMsg cmd{};
-	assert(cmd.magic == kInputCommandMsgMagic);
-	assert(cmd.command == SimCommandId::Reset);
+	StatePacket state{};
+	assert(state.magic == kProtocolMagic);
+	assert(state.version == kProtocolVersion);
+	assert(sizeof(StatePacket) == 1049);
 
-	std::cout << "[PASS] TestProtocol completed successfully.\n";
+	std::cout << "[PASS] TestProtocol completed successfully (261-byte RunConfigPacket & 1049-byte StatePacket verified).\n";
 	return 0;
 }

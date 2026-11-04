@@ -9,12 +9,29 @@
 
 #pragma once
 
-#include "space_docking/dynamics_engine/Types.hpp"
+#include "Types.hpp"
 
 namespace space_docking::dynamics
 {
 	/**
 	 * @brief Computes relative docking state vector Y between Chaser and Target.
+	 *
+	 * MATHEMATICAL FOUNDATION:
+	 * 1. Relative Position Vector:
+	 *    r_rel = r_chaser - r_target [m]
+	 *
+	 * 2. Relative Linear Velocity Vector:
+	 *    v_rel = v_chaser - v_target [m/s]
+	 *
+	 * 3. Relative Attitude Quaternion:
+	 *    q_rel = q_target^-1 (x) q_chaser
+	 *    Transforms vectors from the Target body coordinate system to the Chaser body coordinate system.
+	 *
+	 * 4. Relative Angular Velocity:
+	 *    omega_rel = omega_chaser - R(q_rel) * omega_target [rad/s]
+	 *
+	 * 5. Relative Quaternion Derivative:
+	 *    qDot_rel = 0.5 * q_rel (x) [0, omega_rel]^T
 	 */
 	class RelativeKinematics
 	{

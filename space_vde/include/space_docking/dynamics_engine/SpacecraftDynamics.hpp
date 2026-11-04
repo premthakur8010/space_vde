@@ -12,13 +12,35 @@
 
 #pragma once
 
-#include "space_docking/dynamics_engine/Types.hpp"
+#include "Types.hpp"
 
 namespace space_docking::dynamics
 {
 	/**
 	 * @brief Propagates 6-DOF rigid-body dynamics for a single spacecraft body.
-	 * Instantiated once for the Chaser and once for the Target.
+	 *
+	 * INSTANTIATION:
+	 * Instantiated twice in the Dynamics Engine:
+	 * 1. m_chaser: The active chaser spacecraft performing the docking maneuver.
+	 * 2. m_target: The target spacecraft (station-keeping or tumbling in orbit).
+	 *
+	 * PHYSICAL GOVERNING EQUATIONS:
+	 * 1. Translational Dynamics (Newton's 2nd Law in Inertial Frame):
+	 *    a = F_total / m
+	 *    v(t + dt) = v(t) + a * dt
+	 *    r(t + dt) = r(t) + v(t) * dt + 0.5 * a * dt^2
+	 *
+	 * 2. Rotational Dynamics (Euler's Equations of Motion in Body Frame):
+	 *    J * d(omega)/dt + omega x (J * omega) = tau_body
+	 *    d(omega)/dt = J^-1 * [ tau_body - omega x (J * omega) ]
+	 *    where J is the 3x3 mass moment of inertia tensor, and omega is angular velocity.
+	 *    The term "omega x (J * omega)" represents non-linear gyroscopic coupling
+	 *    (e.g., (Izz - Iyy)*wy*wz).
+	 *
+	 * 3. Attitude Kinematics (Unit Quaternion Integration):
+	 *    dq/dt = 0.5 * q (x) [0, omega]^T
+	 *    where (x) is the Hamilton quaternion cross-product.
+	 *    q(t + dt) is re-normalized to ||q|| = 1.0 to prevent numerical drift.
 	 */
 	class SpacecraftDynamics
 	{

@@ -1,6 +1,9 @@
 /**
  * @file DynamicsEngine.cpp
  * @brief Implementation of the central Dynamics Engine physics coordinator.
+ *
+ * Coordinates the execution of Chaser and Target 6-DOF dynamics, relative docking kinematics,
+ * platform pose computation, and asynchronous CSV telemetry logging at 1 kHz frequency.
  */
 
 #include "space_docking/dynamics_engine/DynamicsEngine.hpp"
@@ -8,11 +11,14 @@
 
 namespace space_docking::dynamics
 {
+	// =========================================================================
+	// 1. INITIALIZATION: Loading Configuration & Starting Simulation Run
+	// =========================================================================
 	ErrorCode DynamicsEngine::initialize(const RunConfig& config)
 	{
 		m_config = config;
 
-		// Setup Chaser dynamics from XML configuration
+		// 1. Configure Chaser physical mass (kg) and moment of inertia tensor (kg*m^2)
 		ErrorCode ec = m_chaser.setup(config.chaserMass, config.chaserInertia);
 		if (ec != ErrorCode::OK)
 		{
@@ -20,7 +26,7 @@ namespace space_docking::dynamics
 			return ec;
 		}
 
-		// Setup Target dynamics from XML configuration
+		// 2. Configure Target physical mass (kg) and moment of inertia tensor (kg*m^2)
 		ec = m_target.setup(config.targetMass, config.targetInertia);
 		if (ec != ErrorCode::OK)
 		{
@@ -28,7 +34,7 @@ namespace space_docking::dynamics
 			return ec;
 		}
 
-		// Setup initial state from configuration
+		// 3. Set initial state vectors from XML configuration
 		BodyState chaserState{};
 		chaserState.pose = config.initialSeparation;
 		chaserState.velocity = config.chaserInitialVelocity;
@@ -38,12 +44,12 @@ namespace space_docking::dynamics
 		targetState.velocity = config.targetInitialVelocity;
 		m_target.setState(targetState);
 
-		m_frameTransform.setFlipMode(config.frameMapping);
+		// 4. Compute initial relative kinematics and platform poses
 		m_latestRelativeState = m_relativeKinematics.compute(chaserState, targetState);
 		m_latestPoses = m_poseComputation.compute(chaserState, targetState, m_latestGspFeedback);
 		m_initialized = true;
 
-		// Initialize CSV telemetry logger and decimation accumulator
+		// 5. Initialize CSV telemetry logger and decimation accumulator (10 ms = 100 Hz log rate)
 		m_stepCount = 0;
 		m_simTime = 0.0;
 		m_accumulator = TelemetryAccumulator(config.logDecimation);
@@ -73,6 +79,9 @@ namespace space_docking::dynamics
 		return ErrorCode::OK;
 	}
 
+	// =========================================================================
+	// 2. DYNAMIC PARAMETER UPDATE (Safe Mid-Run Updates via UDP)
+	// =========================================================================
 	ErrorCode DynamicsEngine::updateParameters(double chaserMass, const Matrix3& chaserInertia,
 	                                           double targetMass, const Matrix3& targetInertia,
 	                                           FrameMapping frameMapping)
@@ -97,11 +106,13 @@ namespace space_docking::dynamics
 		m_config.targetInertia = targetInertia;
 		m_config.frameMapping = frameMapping;
 
-		m_frameTransform.setFlipMode(frameMapping);
 		SD_LOG_INFO("DynamicsEngine parameters dynamically updated without resetting trajectory state");
 		return ErrorCode::OK;
 	}
 
+	// =========================================================================
+	// 3. STEP: The 1 kHz Real-Time Physics Tick (dt = 0.001 s)
+	// =========================================================================
 	ErrorCode DynamicsEngine::step(double dt)
 	{
 		if (!m_initialized)
@@ -110,11 +121,26 @@ namespace space_docking::dynamics
 			return ErrorCode::NOT_INITIALIZED;
 		}
 
-		// 1. Retrieve & convert external sensor forces into body frames
-		const auto bodyForces = m_frameTransform.convertForces(m_currentTelemetry);
+		// ---------------------------------------------------------------------
+		// Step 3.1: Telemetry Channel Routing by Mounting Mode
+		// ---------------------------------------------------------------------
+		// In the physical test facility:
+		// - DEFAULT: Chaser mechanism is mounted on Ground Stewart Platform (GSP),
+		//            Target mechanism is mounted on Flight Stewart Platform (FSP/overhead).
+		// - FLIPPED: Target is mounted on GSP, Chaser is mounted on FSP.
+		const ForceTorque chaserSensorFT = (m_config.frameMapping == FrameMapping::DEFAULT)
+		    ? m_currentTelemetry.groundStewartPlatformForces
+		    : m_currentTelemetry.flightStewartPlatformForces;
 
-		// 2. Add external guidance/control forces per body
-		ForceTorque chaserTotalFT = bodyForces[0];
+		const ForceTorque targetSensorFT = (m_config.frameMapping == FrameMapping::DEFAULT)
+		    ? m_currentTelemetry.flightStewartPlatformForces
+		    : m_currentTelemetry.groundStewartPlatformForces;
+
+		// ---------------------------------------------------------------------
+		// Step 3.2: Combine Sensor Forces with Guidance/Thruster Commands
+		// ---------------------------------------------------------------------
+		// Total Force = Sensor Contact Loads + Active Navigation/Thruster Forces
+		ForceTorque chaserTotalFT = chaserSensorFT;
 		chaserTotalFT.force.x += m_ngcForces[0].force.x;
 		chaserTotalFT.force.y += m_ngcForces[0].force.y;
 		chaserTotalFT.force.z += m_ngcForces[0].force.z;
@@ -122,7 +148,7 @@ namespace space_docking::dynamics
 		chaserTotalFT.torque.y += m_ngcForces[0].torque.y;
 		chaserTotalFT.torque.z += m_ngcForces[0].torque.z;
 
-		ForceTorque targetTotalFT = bodyForces[1];
+		ForceTorque targetTotalFT = targetSensorFT;
 		targetTotalFT.force.x += m_ngcForces[1].force.x;
 		targetTotalFT.force.y += m_ngcForces[1].force.y;
 		targetTotalFT.force.z += m_ngcForces[1].force.z;
@@ -130,20 +156,30 @@ namespace space_docking::dynamics
 		targetTotalFT.torque.y += m_ngcForces[1].torque.y;
 		targetTotalFT.torque.z += m_ngcForces[1].torque.z;
 
-		// 3. Propagate both spacecraft bodies
+		// ---------------------------------------------------------------------
+		// Step 3.3: 6-DOF Numerical Propagation (Newton-Euler via RK4)
+		// ---------------------------------------------------------------------
 		const BodyState chaserState = m_chaser.move(chaserTotalFT, dt);
 		const BodyState targetState = m_target.move(targetTotalFT, dt);
 
-		// 4. Compute spacecraft poses
+		// ---------------------------------------------------------------------
+		// Step 3.4: Compute Hardware Platform Poses (Blending Encoders if Active)
+		// ---------------------------------------------------------------------
 		m_latestPoses = m_poseComputation.compute(chaserState, targetState, m_latestGspFeedback);
 
-		// 5. Compute relative docking state Y
+		// ---------------------------------------------------------------------
+		// Step 3.5: Relative Docking Kinematics (r_rel, v_rel, q_rel, qDot_rel)
+		// ---------------------------------------------------------------------
 		m_latestRelativeState = m_relativeKinematics.compute(chaserState, targetState);
 
 		m_stepCount++;
 		m_simTime += dt;
 
-		// 6. Accumulate and log telemetry asynchronously for 3D visualization replay (every 10 ms)
+		// ---------------------------------------------------------------------
+		// Step 3.6: Asynchronous Decimated CSV Logging (Every 10 ms = 100 Hz)
+		// ---------------------------------------------------------------------
+		// Batching samples and writing in the background prevents slow disk I/O
+		// from causing timing jitter in this critical 1 ms real-time physics loop.
 		if (m_config.loggingEnabled && m_csvLogger.isOpen())
 		{
 			m_accumulator.addSample(chaserState, targetState, m_latestRelativeState);
@@ -158,6 +194,9 @@ namespace space_docking::dynamics
 		return ErrorCode::OK;
 	}
 
+	// =========================================================================
+	// 4. State Accessors and Sensor Mutators
+	// =========================================================================
 	void DynamicsEngine::setTelemetry(const Telemetry& t) noexcept
 	{
 		m_currentTelemetry = t;
@@ -218,5 +257,3 @@ namespace space_docking::dynamics
 		return m_simTime;
 	}
 }
-
-

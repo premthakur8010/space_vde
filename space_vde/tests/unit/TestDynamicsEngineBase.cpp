@@ -1,5 +1,4 @@
 #include "space_docking/dynamics_engine/DynamicsEngine.hpp"
-#include "space_docking/dynamics_engine/FrameTransformation.hpp"
 #include "space_docking/dynamics_engine/RelativeKinematics.hpp"
 #include "space_docking/dynamics_engine/SpacecraftDynamics.hpp"
 #include "space_docking/dynamics_engine/Types.hpp"
@@ -50,22 +49,18 @@ int main()
 	assert(std::abs(euler.pitch) < 1e-6);
 	assert(std::abs(euler.roll) < 1e-6);
 
-	// 3. Test FrameTransformation
-	FrameTransformation ftTransform;
-	ftTransform.setFlipMode(FrameMapping::DEFAULT);
-	Telemetry tel;
-	tel.groundStewartPlatformForces.force = Vector3{1.0, 2.0, 3.0};
-	tel.flightStewartPlatformForces.force = Vector3{4.0, 5.0, 6.0};
+	// 3. Test Dynamic Parameter Updates & Mounting Frame Mapping
+	DynamicsEngine engineTest;
+	RunConfig testCfg{};
+	testCfg.chaserMass = 100.0;
+	testCfg.targetMass = 200.0;
+	assert(engineTest.initialize(testCfg) == ErrorCode::OK);
+	assert(engineTest.getConfig().frameMapping == FrameMapping::DEFAULT);
 
-	auto forces = ftTransform.convertForces(tel);
-	assert(forces[0].force.x == 1.0);
-	assert(forces[1].force.x == 4.0);
-
-	// Test flip
-	ftTransform.setFlipMode(FrameMapping::FLIPPED);
-	auto flippedForces = ftTransform.convertForces(tel);
-	assert(flippedForces[0].force.x == 4.0);
-	assert(flippedForces[1].force.x == 1.0);
+	engineTest.updateParameters(150.0, inertia, 250.0, inertia, FrameMapping::FLIPPED);
+	assert(engineTest.getConfig().frameMapping == FrameMapping::FLIPPED);
+	assert(engineTest.getChaser().getMass() == 150.0);
+	assert(engineTest.getTarget().getMass() == 250.0);
 
 	// 4. Test XmlConfigLoader
 	RunConfig xmlConfig{};

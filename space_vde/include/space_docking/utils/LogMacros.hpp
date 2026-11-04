@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include "space_docking/dynamics_engine/Types.hpp"
-#include "space_docking/utils/Logger.hpp"
+#include "../dynamics_engine/Types.hpp"
+#include "Logger.hpp"
 
 #include <sstream>
 

@@ -19,6 +19,7 @@ project(VdeDockingSimulator LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Platform warning flags and Windows macro guards.
 if(WIN32)
@@ -84,7 +85,10 @@ add_executable(vde_sim
   src/UiCore.cpp
   src/UiWindows.cpp)
 
-target_include_directories(vde_sim PRIVATE include)
+target_include_directories(vde_sim PRIVATE
+  include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../space_vde/include
+)
 target_link_libraries(vde_sim PRIVATE
   glad imgui glm::glm glfw OpenGL::GL
   $<$<PLATFORM_ID:Windows>:comdlg32 ws2_32 winmm>)

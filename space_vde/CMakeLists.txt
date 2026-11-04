@@ -4,6 +4,7 @@ project(space_docking_system VERSION 1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_definitions(_USE_MATH_DEFINES GLM_ENABLE_EXPERIMENTAL)
 
 if (WIN32 AND MINGW)
@@ -57,7 +58,6 @@ endif()
 add_library(space_docking_dynamics_engine STATIC
 	src/dynamics_engine/SpacecraftDynamics.cpp
 	src/dynamics_engine/RelativeKinematics.cpp
-	src/dynamics_engine/FrameTransformation.cpp
 	src/dynamics_engine/SpacecraftPoseComputation.cpp
 	src/dynamics_engine/DynamicsEngine.cpp
 	src/dynamics_engine/XmlConfigLoader.cpp
