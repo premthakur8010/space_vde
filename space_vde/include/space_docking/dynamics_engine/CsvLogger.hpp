@@ -31,8 +31,11 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <mutex>
+#include <ostream>
 #include <queue>
 #include <string>
 #include <thread>

@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <array>
 #include "Types.hpp"
 
 namespace space_docking::dynamics

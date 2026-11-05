@@ -8,6 +8,9 @@
 
 #pragma once
 
+#include <array>
+#include <cstdint>
+
 #include "CsvLogger.hpp"
 #include "RelativeKinematics.hpp"
 #include "SpacecraftDynamics.hpp"
