@@ -19,7 +19,7 @@ The system consists of two independent, decoupled programs communicating over lo
 │                                        │                       │                                        │
 │   • Headless C++ physics solver        │                       │   • Interactive OpenGL 3.3/4.5 + ImGui │
 │   • 1000 Hz cycle (every 1 ms)         │                       │   • 120 FPS render loop (~8.33 ms)     │
-│   • Runs numerical RK4 integration     │                       │   • Real-time 3D scenes & ImPlot charts│
+│   • Runs numerical Symplectic Euler    │                       │   • Real-time 3D scenes & ImPlot charts│
 │                                        │                       │                                        │
 │   Listens on: UDP Port 5001 (Config)   │ ◄─── RunConfigPacket ───  Transmits to Port 5001               │
 │   Streams to: UDP Port 5002 (State)    │ ──── StatePacket ─────►   Listens on: Port 5002                │

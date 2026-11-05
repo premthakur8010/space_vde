@@ -163,7 +163,7 @@ namespace space_docking::dynamics
 		targetTotalFT.torque.z += m_ngcForces[1].torque.z;
 
 		// ---------------------------------------------------------------------
-		// Step 3.3: 6-DOF Numerical Propagation (Newton-Euler via RK4)
+		// Step 3.3: 6-DOF Numerical Propagation (Newton-Euler via Symplectic Euler)
 		// ---------------------------------------------------------------------
 		const BodyState chaserState = m_chaser.move(chaserTotalFT, dt);
 		const BodyState targetState = m_target.move(targetTotalFT, dt);

@@ -13,7 +13,7 @@
  *      allowing mid-run parameter updates (mass, inertia, frame mapping) without resetting trajectory.
  *    - Port 5002 (State Broadcaster): Streams StatePacket telemetry to the UI at 125 Hz (every 8 ms).
  * 4. 1 kHz Cyclic Execution Loop:
- *    - Advances 6-DOF physics by dt = 1.0 ms using 4th-order Runge-Kutta (RK4) integration.
+ *    - Advances 6-DOF physics by dt = 1.0 ms using Semi-Implicit (Symplectic) Euler integration.
  *    - Maps simulated orbital relative kinematics to physical VDE Stewart Platform hardware coordinates.
  * 5. Hybrid Precise Sleep/Spin Timing:
  *    - Yields thread execution while remaining cycle time > 200 microseconds.
@@ -225,7 +225,7 @@ int main(int argc, char** argv)
 		// ---------------------------------------------------------------------
 		// Step 2: Advance Physics Engine by dt (1.0 ms)
 		// ---------------------------------------------------------------------
-		// Integrates Chaser and Target equations of motion via RK4, resolves kinematics,
+		// Integrates Chaser and Target equations of motion via Symplectic Euler, resolves kinematics,
 		// computes relative state vector Y, and buffers CSV telemetry.
 		engine.step(dt);
 		stepCount++;
