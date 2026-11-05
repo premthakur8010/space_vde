@@ -66,6 +66,7 @@ namespace space_docking::network
 		return *this;
 	}
 
+	// Creates an IPv4 UDP datagram socket with address reuse enabled
 	bool UdpSocket::open()
 	{
 		close();
@@ -80,6 +81,7 @@ namespace space_docking::network
 		return true;
 	}
 
+	// Closes the underlying socket handle (closesocket on Windows, close on POSIX)
 	void UdpSocket::close()
 	{
 		if (m_socket != kInvalidSocketFd)
@@ -93,11 +95,13 @@ namespace space_docking::network
 		}
 	}
 
+	// Returns true if socket file descriptor is open and valid
 	bool UdpSocket::isValid() const noexcept
 	{
 		return m_socket != kInvalidSocketFd;
 	}
 
+	// Allows multiple processes or restarts to bind to the same local port immediately
 	bool UdpSocket::setReuseAddr(bool enable)
 	{
 		if (m_socket == kInvalidSocketFd)
@@ -116,6 +120,7 @@ namespace space_docking::network
 #endif
 	}
 
+	// Sets socket to non-blocking mode so recvFrom returns immediately instead of waiting
 	bool UdpSocket::setNonBlocking(bool nonBlocking)
 	{
 		if (m_socket == kInvalidSocketFd)
@@ -167,6 +172,7 @@ namespace space_docking::network
 #endif
 	}
 
+	// Binds the socket to a local port (e.g. 5001) to receive incoming packets
 	bool UdpSocket::bindSocket(uint16_t port, const std::string& host)
 	{
 		if (m_socket == kInvalidSocketFd && !open())
@@ -196,6 +202,7 @@ namespace space_docking::network
 		return true;
 	}
 
+	// Transmits a binary UDP packet to the destination host IP and port
 	int UdpSocket::sendTo(const void* data, size_t size, const std::string& host, uint16_t port)
 	{
 		if (m_socket == kInvalidSocketFd && !open())
@@ -218,6 +225,7 @@ namespace space_docking::network
 		));
 	}
 
+	// Reads an incoming UDP packet into buffer (returns number of bytes received, or -1 if empty)
 	int UdpSocket::recvFrom(void* buffer, size_t maxSize)
 	{
 		if (m_socket == kInvalidSocketFd)

@@ -30,11 +30,13 @@ namespace space_docking::dynamics
 	// TelemetryAccumulator Implementation
 	// =========================================================================
 
+	// Sets how many 1 ms physics steps to bundle into one CSV log row (e.g., decimation=10 gives 100 Hz logging)
 	TelemetryAccumulator::TelemetryAccumulator(uint32_t decimation)
 		: m_decimation(decimation > 0 ? decimation : 1)
 	{
 	}
 
+	// Clears the step counter and wipes cached states for a fresh simulation run
 	void TelemetryAccumulator::reset(const Pose& /*initialRelativePose*/) noexcept
 	{
 		m_sampleCount = 0;
@@ -43,6 +45,7 @@ namespace space_docking::dynamics
 		m_latestRelative = RelativeState{};
 	}
 
+	// Called every 1 ms by the physics engine: caches the newest spacecraft states and increments the step count
 	void TelemetryAccumulator::addSample(const BodyState& chaser,
 	                                    const BodyState& target,
 	                                    const RelativeState& relative) noexcept
@@ -56,12 +59,14 @@ namespace space_docking::dynamics
 		m_sampleCount++;
 	}
 
+	// Returns true when enough samples have accumulated (e.g., 10 ms reached) to write a CSV row
 	bool TelemetryAccumulator::isReady() const noexcept
 	{
 		// Ready to log when exactly 10 samples (10 ms) have been accumulated
 		return m_sampleCount >= m_decimation;
 	}
 
+	// Packages the latest 10 ms state into a TelemetryLogEntry and resets the counter for the next window
 	TelemetryLogEntry TelemetryAccumulator::computeNetEntryAndAdvance(double timestamp, uint64_t cycleCount) noexcept
 	{
 		TelemetryLogEntry entry{};
@@ -101,9 +106,9 @@ namespace space_docking::dynamics
 		open(filename);
 	}
 
+	// Destructor: flushes remaining rows and cleanly terminates background writer thread
 	CsvLogger::~CsvLogger()
 	{
-		// Cleanly flush remaining entries and join background thread on destruction
 		close();
 	}
 
@@ -112,6 +117,7 @@ namespace space_docking::dynamics
 		*this = std::move(other);
 	}
 
+	// Thread-safe move assignment: transfers file handles and worker thread ownership
 	CsvLogger& CsvLogger::operator=(CsvLogger&& other) noexcept
 	{
 		if (this != &other)
@@ -143,6 +149,7 @@ namespace space_docking::dynamics
 		return *this;
 	}
 
+	// Creates directory (e.g. "logs/"), opens CSV file, writes header row, and starts background thread
 	ErrorCode CsvLogger::open(const std::string& filename)
 	{
 		close();
@@ -188,6 +195,7 @@ namespace space_docking::dynamics
 		return ErrorCode::OK;
 	}
 
+	// Signals background thread to flush pending rows, waits for it to finish, and closes the file
 	void CsvLogger::close()
 	{
 		if (!m_isOpen)
@@ -213,6 +221,7 @@ namespace space_docking::dynamics
 		m_isOpen = false;
 	}
 
+	// Non-blocking write (<50 ns): enqueues telemetry entry from the 1 kHz physics loop and wakes worker thread
 	ErrorCode CsvLogger::log(const TelemetryLogEntry& entry)
 	{
 		if (!m_isOpen)
@@ -239,6 +248,7 @@ namespace space_docking::dynamics
 		return ErrorCode::OK;
 	}
 
+	// Enqueues raw double values for custom logging or test suites
 	ErrorCode CsvLogger::writeRow(const std::vector<double>& values)
 	{
 		if (!m_isOpen)
@@ -262,11 +272,13 @@ namespace space_docking::dynamics
 		return ErrorCode::OK;
 	}
 
+	// Returns true if the CSV file is open and background logging is active
 	bool CsvLogger::isOpen() const noexcept
 	{
 		return m_isOpen;
 	}
 
+	// Blocks until all queued in-memory entries have been written and flushed to disk
 	void CsvLogger::flush()
 	{
 		if (!m_isOpen)
@@ -294,17 +306,20 @@ namespace space_docking::dynamics
 		}
 	}
 
+	// Returns the total number of rows physically written to disk
 	uint64_t CsvLogger::getWrittenRowCount() const noexcept
 	{
 		return m_writtenRows.load();
 	}
 
+	// Returns the current number of rows waiting in memory to be written
 	size_t CsvLogger::getQueuedRowCount() const noexcept
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		return m_queue.size();
 	}
 
+	// Writes the 25-column CSV header row defining all trajectory fields
 	void CsvLogger::writeHeader()
 	{
 		// Streamlined 25-column CSV header designed specifically for 3D visualization replay
@@ -319,6 +334,7 @@ namespace space_docking::dynamics
 		m_file.flush();
 	}
 
+	// Formats a TelemetryLogEntry into a comma-separated line with fixed 6-8 decimal precision
 	void CsvLogger::writeEntryToStream(std::ostream& os, const TelemetryLogEntry& entry)
 	{
 		// High precision numerical formatting for accurate 3D playback
@@ -362,6 +378,7 @@ namespace space_docking::dynamics
 		   << entry.relativeEulerDeg.roll << "\n";
 	}
 
+	// Formats a generic vector of doubles into a comma-separated line
 	void CsvLogger::writeValuesToStream(std::ostream& os, const std::vector<double>& values)
 	{
 		os << std::fixed << std::setprecision(6);
@@ -376,6 +393,7 @@ namespace space_docking::dynamics
 		os << "\n";
 	}
 
+	// Background worker loop: sleeps until rows arrive, batches up to 128 rows, and writes to disk
 	void CsvLogger::workerLoop()
 	{
 		std::vector<QueueItem> batch;

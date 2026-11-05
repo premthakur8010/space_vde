@@ -37,6 +37,7 @@ namespace space_docking::dynamics
 		}
 	}
 
+	// Computes 14-element relative state vector Y (r_rel, v_rel, q_rel, qDot_rel) from Chaser and Target body states
 	RelativeState RelativeKinematics::compute(const BodyState& chaser, const BodyState& target) const noexcept
 	{
 		RelativeState rel;

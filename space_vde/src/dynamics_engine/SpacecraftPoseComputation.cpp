@@ -14,6 +14,7 @@
 
 namespace space_docking::dynamics
 {
+	// Computes 3D platform poses [0]=Chaser, [1]=Target, blending physical table feedback if active
 	std::array<Pose, 2> SpacecraftPoseComputation::compute(const BodyState& c,
 	                                                       const BodyState& t,
 	                                                       const GspFeedback& f) const noexcept

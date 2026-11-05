@@ -107,6 +107,7 @@ namespace space_docking::dynamics
 		}
 	}
 
+	// Parses simulation_config.xml and populates RunConfig (masses, inertias, initial pos/vel, logging)
 	ErrorCode XmlConfigLoader::loadRunConfig(const std::string& filePath, RunConfig& outConfig)
 	{
 		// 1. Verify file accessibility on filesystem
@@ -300,6 +301,7 @@ namespace space_docking::dynamics
 		return ErrorCode::OK;
 	}
 
+	// Loads configuration from file, or returns default-initialized RunConfig if loading fails
 	RunConfig XmlConfigLoader::loadOrDefault(const std::string& filePath)
 	{
 		RunConfig config{};

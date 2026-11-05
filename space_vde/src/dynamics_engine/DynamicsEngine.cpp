@@ -14,6 +14,8 @@ namespace space_docking::dynamics
 	// =========================================================================
 	// 1. INITIALIZATION: Loading Configuration & Starting Simulation Run
 	// =========================================================================
+
+	// Sets up spacecraft masses, initial positions/velocities from XML, and opens CSV logging
 	ErrorCode DynamicsEngine::initialize(const RunConfig& config)
 	{
 		m_config = config;
@@ -82,6 +84,8 @@ namespace space_docking::dynamics
 	// =========================================================================
 	// 2. DYNAMIC PARAMETER UPDATE (Safe Mid-Run Updates via UDP)
 	// =========================================================================
+
+	// Safely updates masses and inertias mid-run via UDP without resetting positions or desyncing clocks
 	ErrorCode DynamicsEngine::updateParameters(double chaserMass, const Matrix3& chaserInertia,
 	                                           double targetMass, const Matrix3& targetInertia,
 	                                           FrameMapping frameMapping)
@@ -113,6 +117,8 @@ namespace space_docking::dynamics
 	// =========================================================================
 	// 3. STEP: The 1 kHz Real-Time Physics Tick (dt = 0.001 s)
 	// =========================================================================
+
+	// The core 1000 Hz physics tick: routes sensor forces, integrates 6-DOF motion, and logs decimated telemetry
 	ErrorCode DynamicsEngine::step(double dt)
 	{
 		if (!m_initialized)
@@ -197,61 +203,74 @@ namespace space_docking::dynamics
 	// =========================================================================
 	// 4. State Accessors and Sensor Mutators
 	// =========================================================================
+
+	// Injects live load-cell force/torque readings from the Stewart platform
 	void DynamicsEngine::setTelemetry(const Telemetry& t) noexcept
 	{
 		m_currentTelemetry = t;
 	}
 
+	// Injects guidance thruster forces for Chaser [0] and Target [1]
 	void DynamicsEngine::setNgcForces(const std::array<ForceTorque, 2>& f) noexcept
 	{
 		m_ngcForces = f;
 	}
 
+	// Injects measured optical encoder displacement from the physical Stewart platform
 	void DynamicsEngine::setGspFeedback(const GspFeedback& f) noexcept
 	{
 		m_latestGspFeedback = f;
 	}
 
+	// Returns read-only reference to the Chaser spacecraft dynamics object
 	const SpacecraftDynamics& DynamicsEngine::getChaser() const noexcept
 	{
 		return m_chaser;
 	}
 
+	// Returns read-only reference to the Target spacecraft dynamics object
 	const SpacecraftDynamics& DynamicsEngine::getTarget() const noexcept
 	{
 		return m_target;
 	}
 
+	// Returns the latest 14-element relative docking state (r_rel, v_rel, q_rel, qDot_rel)
 	const RelativeState& DynamicsEngine::getRelativeState() const noexcept
 	{
 		return m_latestRelativeState;
 	}
 
+	// Returns the computed 3D platform poses [0]=Chaser, [1]=Target
 	const std::array<Pose, 2>& DynamicsEngine::getPoses() const noexcept
 	{
 		return m_latestPoses;
 	}
 
+	// Forces all buffered in-memory CSV telemetry rows to be written to disk immediately
 	void DynamicsEngine::flushLogs() noexcept
 	{
 		m_csvLogger.flush();
 	}
 
+	// Returns non-const reference to the internal asynchronous CSV telemetry logger
 	CsvLogger& DynamicsEngine::getCsvLogger() noexcept
 	{
 		return m_csvLogger;
 	}
 
+	// Returns const reference to the internal asynchronous CSV telemetry logger
 	const CsvLogger& DynamicsEngine::getCsvLogger() const noexcept
 	{
 		return m_csvLogger;
 	}
 
+	// Returns the total number of 1 ms integration steps completed
 	uint64_t DynamicsEngine::getStepCount() const noexcept
 	{
 		return m_stepCount;
 	}
 
+	// Returns elapsed simulation time in seconds (stepCount * dt)
 	double DynamicsEngine::getSimTime() const noexcept
 	{
 		return m_simTime;

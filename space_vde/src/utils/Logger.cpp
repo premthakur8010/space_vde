@@ -25,6 +25,7 @@ namespace space_docking::utils
 		}
 	}
 
+	// Returns thread-safe singleton instance of the diagnostic logger
 	Logger& Logger::getInstance() noexcept
 	{
 		static Logger instance;
@@ -41,17 +42,20 @@ namespace space_docking::utils
 		}
 	}
 
+	// Sets minimum log level threshold (Trace, Debug, Info, Warn, Error)
 	void Logger::setLevel(LogLevel level) noexcept
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_level = level;
 	}
 
+	// Returns active log level threshold
 	LogLevel Logger::getLevel() const noexcept
 	{
 		return m_level;
 	}
 
+	// Opens destination log file on disk in append mode
 	void Logger::setOutputFile(const std::string& filePath)
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
@@ -62,6 +66,7 @@ namespace space_docking::utils
 		m_fileStream.open(filePath, std::ios::out | std::ios::app);
 	}
 
+	// Formats and outputs message with millisecond timestamp to console and file
 	void Logger::log(LogLevel level, std::string_view message)
 	{
 		if (static_cast<uint8_t>(level) < static_cast<uint8_t>(m_level))
@@ -97,6 +102,7 @@ namespace space_docking::utils
 		}
 	}
 
+	// Formats log output enriched with source file name, line number, and function name
 	void Logger::logWithContext(LogLevel level, std::string_view message,
 	                            std::string_view file, int line,
 	                            std::string_view func)
@@ -163,6 +169,7 @@ namespace space_docking::utils
 		}
 	}
 
+	// Translates numeric ErrorCode into human-readable text and logs at Error severity
 	void Logger::logError(dynamics::ErrorCode code, std::string_view message,
 	                      std::string_view file, int line,
 	                      std::string_view func)

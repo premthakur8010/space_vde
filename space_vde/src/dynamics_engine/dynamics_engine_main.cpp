@@ -47,6 +47,7 @@ namespace
 	// Global atomic flag to handle graceful shutdown on SIGINT (Ctrl+C)
 	std::atomic<bool> g_running{true};
 
+	// Intercepts SIGINT/SIGTERM (Ctrl+C) to trigger graceful simulation shutdown
 	void signalHandler(int /*signal*/)
 	{
 		g_running = false;
@@ -55,6 +56,7 @@ namespace
 	using space_docking::utils::quatToEuler;
 }
 
+// Main entry point: runs 1 kHz physics loop, receives UI RunConfig on 5001, broadcasts StatePacket on 5002
 int main(int argc, char** argv)
 {
 #if defined(_WIN32)

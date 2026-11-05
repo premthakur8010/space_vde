@@ -19,6 +19,8 @@ namespace space_docking::dynamics
 	// =========================================================================
 	// 1. SETUP: Spacecraft Mass and Moment of Inertia Configuration
 	// =========================================================================
+
+	// Configures spacecraft physical mass (kg) and 3x3 inertia tensor (kg*m^2), verifying positive mass
 	ErrorCode SpacecraftDynamics::setup(double mass, const Matrix3& inertia)
 	{
 		// Physical sanity check: mass cannot be zero or negative
@@ -37,6 +39,8 @@ namespace space_docking::dynamics
 	// =========================================================================
 	// 2. MOVE: 6-DOF Dynamic Propagation over Timestep dt (1 kHz tick)
 	// =========================================================================
+
+	// Integrates 6-DOF translation (F=ma) and rotation (Euler's equations) over timestep dt (1 ms)
 	BodyState SpacecraftDynamics::move(const ForceTorque& w, double dt)
 	{
 		// Safety Guard: Spacecraft must have a valid positive mass configured before stepping
@@ -167,21 +171,26 @@ namespace space_docking::dynamics
 	// =========================================================================
 	// 3. State Accessors & Mutators
 	// =========================================================================
+
+	// Returns current 13-element body state (position, quaternion, velocity, angular rate)
 	const BodyState& SpacecraftDynamics::getState() const noexcept
 	{
 		return m_state;
 	}
 
+	// Overwrites body state directly (used when initializing positions from XML config)
 	void SpacecraftDynamics::setState(const BodyState& state) noexcept
 	{
 		m_state = state;
 	}
 
+	// Returns active spacecraft mass in kilograms
 	double SpacecraftDynamics::getMass() const noexcept
 	{
 		return m_mass;
 	}
 
+	// Returns active 3x3 moment of inertia tensor in kg*m^2
 	const Matrix3& SpacecraftDynamics::getInertia() const noexcept
 	{
 		return m_inertia;
