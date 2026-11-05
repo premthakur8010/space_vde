@@ -463,15 +463,44 @@ void SpacecraftScene::render(Painter& p, const SimSnapshot& snap) {
 	p.sphere({0, 0, -75.0f}, 70.0f, {0.20f, 0.42f, 0.75f}, 1);
 	p.label({-6.0f, -6.0f, -5.3f}, "Earth", LabelKind::Object, 1.0f);
 
-	const float gap = 0.9f + 0.5f * (float)std::sin(snap.timeS * 0.25);
-	Rpy chaserAtt = sc.chaser.eciOrientationRad; chaserAtt.yaw = 0.0;
-	Rpy targetAtt = sc.target.eciOrientationRad; targetAtt.yaw = 0.0;
-	targetAtt.roll *= 0.4; targetAtt.pitch *= 0.4;
+	// -------------------------------------------------------------------------
+	// 1. Spacecraft Attitude: Direct Telemetry from Dynamics Engine
+	// -------------------------------------------------------------------------
+	// Real 3-axis Euler roll, pitch, and yaw angles from simulation telemetry
+	const Rpy& chaserAtt = sc.chaser.eciOrientationRad;
+	const Rpy& targetAtt = sc.target.eciOrientationRad;
 
+	// -------------------------------------------------------------------------
+	// 2. Relative Position & Closing Distance: From 14-Element State Vector Y
+	// -------------------------------------------------------------------------
+	// snap.relative.pose.position represents r_rel = r_chaser - r_target in metres.
+	// In the docking corridor, the Chaser approaches along -X towards contact at 0.
 	const glm::vec3 targetSize(3.0f, 2.6f, 2.6f), chaserSize(2.0f, 1.7f, 1.7f);
 	const float mech = 0.45f;
-	const glm::mat4 bT = attitude({targetSize.x * 0.5f + mech + 0.1f, 0, 0}, targetAtt);
-	const glm::mat4 bC = attitude({-(chaserSize.x * 0.5f + mech + gap * 0.5f + 0.1f), 0, 0}, chaserAtt);
+
+	float gap = 0.0f;
+	float offsetY = 0.0f;
+	float offsetZ = 0.0f;
+
+	const double relX = snap.relative.pose.position.x;
+	const double relY = snap.relative.pose.position.y;
+	const double relZ = snap.relative.pose.position.z;
+
+	if (std::abs(relX) > 1e-4 || std::abs(relY) > 1e-4 || std::abs(relZ) > 1e-4) {
+		// Telemetry active: exact physical relative separation and lateral misalignments
+		gap = (float)std::abs(relX);
+		offsetY = (float)relY;
+		offsetZ = (float)relZ;
+	} else if (snap.timeS <= 0.0) {
+		// Nominal idle visual separation before UDP packets arrive
+		gap = 1.2f;
+	}
+
+	// Target docking port tip is placed at origin X = 0.
+	// Chaser docking port tip is placed at X = -gap (plus lateral offsets Y and Z).
+	// When gap reaches 0.0 m, the two docking port tips touch exactly.
+	const glm::mat4 bT = attitude({targetSize.x * 0.5f + mech, 0.0f, 0.0f}, targetAtt);
+	const glm::mat4 bC = attitude({-(chaserSize.x * 0.5f + mech + gap), offsetY, offsetZ}, chaserAtt);
 
 	p.box({0, 0, 0}, targetSize, {0.86f, 0.87f, 0.89f}, bT);
 	p.box({0, 0, 0}, chaserSize, {0.85f, 0.70f, 0.38f}, bC);

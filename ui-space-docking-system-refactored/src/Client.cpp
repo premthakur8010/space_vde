@@ -314,6 +314,12 @@ SimSnapshot ReplayPlayer::snapshot(const RunConfig& cfg) const {
 	s.spacecraft.ngc.mode           = cfg.ngcMode;
 	s.spacecraft.ngc.failureCase    = "Replay";
 	s.spacecraft.ngc.disturbancesOn = cfg.disturbancesOn;
+
+	// Synchronize synthetic replay trajectory across relative and spacecraft states
+	const double replayGap = 0.9 + 0.5 * std::sin(0.25 * m_time);
+	s.relative.pose.position = {-replayGap, s.vde.positionM.x, s.vde.positionM.y};
+	s.spacecraft.chaser.eciOrientationRad = s.vde.orientationRad;
+	s.spacecraft.target.eciOrientationRad = {0.0, 0.0, 0.0};
 	return s;
 }
 
@@ -335,6 +341,7 @@ AppState::AppState(RunConfig initialConfig) : m_runConfig(std::move(initialConfi
 	m_live.spacecraft.ngc.mode           = m_runConfig.ngcMode;
 	m_live.spacecraft.ngc.failureCase    = "None (nominal)";
 	m_live.spacecraft.ngc.disturbancesOn = m_runConfig.disturbancesOn;
+	m_live.relative.pose.position.x      = m_runConfig.alongTrackSepM;
 }
 
 // Opens the UDP sockets and immediately transmits the initial RunConfig packet to the Dynamics Engine.
