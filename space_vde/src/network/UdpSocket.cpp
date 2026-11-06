@@ -1,3 +1,8 @@
+/**
+ * @file UdpSocket.cpp
+ * @brief Cross-platform IPv4 UDP socket wrapper implementation (Winsock on Windows, POSIX sockets on Linux).
+ */
+
 #include "space_docking/network/UdpSocket.hpp"
 
 #include "space_docking/utils/Logger.hpp"
@@ -22,6 +27,7 @@ namespace space_docking::network
 #endif
 	}
 
+	// Initializes OS network subsystem (invokes WSAStartup once on Windows; no-op on POSIX)
 	void NetSystem::initialize()
 	{
 #if defined(_WIN32)
@@ -38,23 +44,27 @@ namespace space_docking::network
 #endif
 	}
 
+	// Constructor: ensures OS network subsystem is initialized and sets socket handle to invalid
 	UdpSocket::UdpSocket()
 		: m_socket(kInvalidSocketFd)
 	{
 		NetSystem::initialize();
 	}
 
+	// Destructor: safely closes active socket handle to release OS networking resources
 	UdpSocket::~UdpSocket()
 	{
 		close();
 	}
 
+	// Move constructor: transfers ownership of socket descriptor without closing the handle
 	UdpSocket::UdpSocket(UdpSocket&& other) noexcept
 		: m_socket(other.m_socket)
 	{
 		other.m_socket = kInvalidSocketFd;
 	}
 
+	// Move assignment operator: closes current socket and claims ownership of incoming socket
 	UdpSocket& UdpSocket::operator=(UdpSocket&& other) noexcept
 	{
 		if (this != &other)
@@ -141,6 +151,7 @@ namespace space_docking::network
 #endif
 	}
 
+	// Enables or disables local loopback of outgoing multicast datagrams
 	bool UdpSocket::setMulticastLoop(bool enable)
 	{
 		if (m_socket == kInvalidSocketFd)
@@ -156,6 +167,7 @@ namespace space_docking::network
 #endif
 	}
 
+	// Joins an IPv4 multicast group address (e.g. "239.255.0.1") using IP_ADD_MEMBERSHIP
 	bool UdpSocket::joinMulticastGroup(const std::string& groupIp)
 	{
 		if (m_socket == kInvalidSocketFd)

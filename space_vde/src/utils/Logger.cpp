@@ -1,3 +1,8 @@
+/**
+ * @file Logger.cpp
+ * @brief Thread-safe diagnostic logging implementation with millisecond timestamps and source context.
+ */
+
 #include "space_docking/utils/Logger.hpp"
 #include "space_docking/dynamics_engine/Types.hpp"
 
@@ -11,6 +16,7 @@ namespace space_docking::utils
 {
 	namespace
 	{
+		// Converts LogLevel enum to fixed-width badge string (e.g. "[INFO ]", "[ERROR]")
 		const char* getLevelString(LogLevel level) noexcept
 		{
 			switch (level)
@@ -32,6 +38,7 @@ namespace space_docking::utils
 		return instance;
 	}
 
+	// Destructor: flushes remaining log buffers and safely closes the file stream
 	Logger::~Logger()
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
@@ -180,26 +187,31 @@ namespace space_docking::utils
 		logWithContext(LogLevel::Error, ss.str(), file, line, func);
 	}
 
+	// Convenience wrapper: outputs message at Trace severity level
 	void Logger::trace(std::string_view message)
 	{
 		log(LogLevel::Trace, message);
 	}
 
+	// Convenience wrapper: outputs message at Debug severity level
 	void Logger::debug(std::string_view message)
 	{
 		log(LogLevel::Debug, message);
 	}
 
+	// Convenience wrapper: outputs message at Info severity level
 	void Logger::info(std::string_view message)
 	{
 		log(LogLevel::Info, message);
 	}
 
+	// Convenience wrapper: outputs message at Warn severity level
 	void Logger::warn(std::string_view message)
 	{
 		log(LogLevel::Warn, message);
 	}
 
+	// Convenience wrapper: outputs message at Error severity level
 	void Logger::error(std::string_view message)
 	{
 		log(LogLevel::Error, message);
