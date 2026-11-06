@@ -25,9 +25,9 @@
 
             <!-- Initial position in millimetres (mm), expressed in the TARGET reference frame -->
             <!-- (origin at target docking port; +X docking axis, +Y up, +Z right). -->
-            <!-- Chaser starts along -X axis separated by 3000 mm (3 m) -->
+            <!-- Chaser starts along -X axis separated by 550 mm (0.55 m) within the physical VDE stroke -->
             <initialposition>
-                <x>-3000.0</x>
+                <x>-550.0</x>
                 <y>0.0</y>
                 <z>0.0</z>
             </initialposition>

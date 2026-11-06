@@ -285,26 +285,13 @@ int main(int argc, char** argv)
 			// - The Ground Stewart Platform (GSP) moves on 6 hydraulic/electric actuator legs.
 			// - Docking approach axis (spacecraft Line-of-Sight, +X) is physically oriented
 			//   along the VERTICAL axis (+Z) of the testbed toward the overhead ceiling gantry.
-			// - Physical vertical stroke limit is 550 mm (0.0 to 0.550 m).
+			// - Direct 1:1 hardware mapping: separation of 550 mm maps directly to physical stroke [0.0, 0.550] m.
 			// - Spacecraft lateral errors (+Y, +Z) map to testbed horizontal sway (+X, +Y),
 			//   clamped to physical hexapod travel boundaries (+/- 0.100 m).
 			// - Angular roll/pitch are clamped to +/- 5 deg (+/- 0.087 rad); yaw to +/- 10 deg (+/- 0.174 rad).
 			const auto relEuler = rel.toEuler();
-			const double initX = config.initialSeparation.position.x;
-			double vdeZ = 0.0;
-			double vdeVz = 0.0;
-			if (std::abs(initX) > 1e-4)
-			{
-				// Progress ratio: 0.0 at initial standoff distance, 1.0 at physical contact (0.0 m)
-				const double progress = std::clamp((rel.pose.position.x - initX) / (0.0 - initX), 0.0, 1.0);
-				vdeZ = progress * 0.550; // Map normalized progress to physical 0 to 550 mm stroke
-				vdeVz = (rel.velocity.x / (0.0 - initX)) * 0.550;
-			}
-			else
-			{
-				vdeZ = std::clamp(0.550 + rel.pose.position.x, 0.0, 0.550);
-				vdeVz = rel.velocity.x;
-			}
+			const double vdeZ = std::clamp(0.550 + rel.pose.position.x, 0.0, 0.550);
+			const double vdeVz = rel.velocity.x;
 
 			// Clamp horizontal displacements to Stewart platform travel envelope (+/- 100 mm)
 			const double vdeX = std::clamp(rel.pose.position.y, -0.100, 0.100);
