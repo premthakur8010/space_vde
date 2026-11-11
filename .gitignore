@@ -1,0 +1,12 @@
+build/
+*/build/
+build_win/
+*/build_win/
+logs/
+*/logs/
+*.o
+*.a
+bin/
+compile_commands.json
+.clangd
+.vscode/
