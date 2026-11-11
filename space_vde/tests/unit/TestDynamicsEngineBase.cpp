@@ -3,9 +3,22 @@
 #include "space_docking/dynamics_engine/SpacecraftDynamics.hpp"
 #include "space_docking/dynamics_engine/Types.hpp"
 #include "space_docking/dynamics_engine/XmlConfigLoader.hpp"
+#include "space_docking/dynamics_engine/XmlConfigUtils.hpp"
 
-#include <cassert>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+
+#define REQUIRE(cond) \
+	do { \
+		if (!(cond)) { \
+			std::cerr << "FAILED REQUIRE(" #cond ") at " << __FILE__ << ":" << __LINE__ << std::endl; \
+			std::exit(1); \
+		} \
+	} while (false)
 
 int main()
 {
@@ -20,15 +33,15 @@ int main()
 	inertia.m[4] = 50.0;
 	inertia.m[8] = 25.0;
 
-	assert(chaser.setup(500.0, inertia) == ErrorCode::OK);
+	REQUIRE(chaser.setup(500.0, inertia) == ErrorCode::OK);
 
 	ForceTorque ft;
 	ft.force = Vector3{10.0, 0.0, 0.0}; // 10 N in X
 	ft.torque = Vector3{0.0, 0.0, 0.0};
 
 	BodyState state = chaser.move(ft, 0.001); // 1 ms step
-	assert(state.velocity.x > 0.0);
-	assert(state.pose.position.x > 0.0);
+	REQUIRE(state.velocity.x > 0.0);
+	REQUIRE(state.pose.position.x > 0.0);
 
 	// 2. Test RelativeKinematics
 	BodyState targetState{};
@@ -41,41 +54,107 @@ int main()
 
 	RelativeKinematics relKin;
 	RelativeState rel = relKin.compute(chaserState, targetState);
-	assert(rel.pose.position.x == -5.0); // 5 - 10 = -5
-	assert(rel.pose.orientation.w == 1.0);
+	REQUIRE(rel.pose.position.x == -5.0); // 5 - 10 = -5
+	REQUIRE(rel.pose.orientation.w == 1.0);
 
 	EulerAngles euler = rel.toEuler();
-	assert(std::abs(euler.yaw) < 1e-6);
-	assert(std::abs(euler.pitch) < 1e-6);
-	assert(std::abs(euler.roll) < 1e-6);
+	REQUIRE(std::abs(euler.yaw) < 1e-6);
+	REQUIRE(std::abs(euler.pitch) < 1e-6);
+	REQUIRE(std::abs(euler.roll) < 1e-6);
 
 	// 3. Test Dynamic Parameter Updates & Mounting Frame Mapping
 	DynamicsEngine engineTest;
 	RunConfig testCfg{};
 	testCfg.chaserMass = 100.0;
 	testCfg.targetMass = 200.0;
-	assert(engineTest.initialize(testCfg) == ErrorCode::OK);
-	assert(engineTest.getConfig().frameMapping == FrameMapping::DEFAULT);
+	REQUIRE(engineTest.initialize(testCfg) == ErrorCode::OK);
+	REQUIRE(engineTest.getConfig().frameMapping == FrameMapping::DEFAULT);
 
 	engineTest.updateParameters(150.0, inertia, 250.0, inertia, FrameMapping::FLIPPED);
-	assert(engineTest.getConfig().frameMapping == FrameMapping::FLIPPED);
-	assert(engineTest.getChaser().getMass() == 150.0);
-	assert(engineTest.getTarget().getMass() == 250.0);
+	REQUIRE(engineTest.getConfig().frameMapping == FrameMapping::FLIPPED);
+	REQUIRE(engineTest.getChaser().getMass() == 150.0);
+	REQUIRE(engineTest.getTarget().getMass() == 250.0);
 
 	// 4. Test XmlConfigLoader
+	std::string configPath = "config/simulation_config.xml";
+	if (!std::filesystem::exists(configPath))
+	{
+		if (std::filesystem::exists("../config/simulation_config.xml"))
+		{
+			configPath = "../config/simulation_config.xml";
+		}
+		else if (std::filesystem::exists("space_vde/config/simulation_config.xml"))
+		{
+			configPath = "space_vde/config/simulation_config.xml";
+		}
+	}
+
 	RunConfig xmlConfig{};
-	ErrorCode xmlEc = XmlConfigLoader::loadRunConfig("config/simulation_config.xml", xmlConfig);
-	assert(xmlEc == ErrorCode::OK);
-	assert(xmlConfig.chaserMass == 50.0);
-	assert(xmlConfig.targetMass == 100.0);
-	assert(xmlConfig.chaserInertia.m[0] == 5.0);
+	ErrorCode xmlEc = XmlConfigLoader::loadRunConfig(configPath, xmlConfig);
+	REQUIRE(xmlEc == ErrorCode::OK);
+	REQUIRE(xmlConfig.chaserMass == 50.0);
+	REQUIRE(xmlConfig.targetMass == 100.0);
+	REQUIRE(xmlConfig.chaserInertia.m[0] == 5.0);
+	REQUIRE(xmlConfig.targetHost == "127.0.0.1");
+	REQUIRE(xmlConfig.configPort == 5001);
+	REQUIRE(xmlConfig.statePort == 5002);
 
 	// 5. Test DynamicsEngine coordinator with XML config
 	DynamicsEngine engine;
-	assert(engine.initialize(xmlConfig) == ErrorCode::OK);
-	assert(engine.getChaser().getMass() == 50.0);
-	assert(engine.getTarget().getMass() == 100.0);
-	assert(engine.step(0.001) == ErrorCode::OK);
+	REQUIRE(engine.initialize(xmlConfig) == ErrorCode::OK);
+	REQUIRE(engine.getChaser().getMass() == 50.0);
+	REQUIRE(engine.getTarget().getMass() == 100.0);
+	REQUIRE(engine.step(0.001) == ErrorCode::OK);
+
+	// 6. Test <network> XML parsing, comment stripping, and invalid port rejection
+	const std::string rawNetXml =
+		"<simulationconfig>"
+		"<!-- <network><targethost>10.0.0.1</targethost><configport>9999</configport></network> -->"
+		"<network><targethost> 192.168.1.42 </targethost><configport>6101</configport><stateport>6102</stateport></network>"
+		"</simulationconfig>";
+	std::string parsedHost = "127.0.0.1";
+	uint16_t parsedConfigPort = 5001;
+	uint16_t parsedStatePort = 5002;
+	std::string netErr;
+	REQUIRE(xml_utils::parseNetworkBlock(xml_utils::stripXmlComments(rawNetXml),
+	                                     parsedHost,
+	                                     parsedConfigPort,
+	                                     parsedStatePort,
+	                                     netErr));
+	REQUIRE(parsedHost == "192.168.1.42");
+	REQUIRE(parsedConfigPort == 6101);
+	REQUIRE(parsedStatePort == 6102);
+
+	const std::string badPortZero = "<network><configport>0</configport></network>";
+	REQUIRE(!xml_utils::parseNetworkBlock(badPortZero, parsedHost, parsedConfigPort, parsedStatePort, netErr));
+	REQUIRE(!netErr.empty());
+
+	const std::string badPortRange = "<network><stateport>70000</stateport></network>";
+	netErr.clear();
+	REQUIRE(!xml_utils::parseNetworkBlock(badPortRange, parsedHost, parsedConfigPort, parsedStatePort, netErr));
+	REQUIRE(!netErr.empty());
+
+	const std::string badPortText = "<network><configport>abc</configport></network>";
+	netErr.clear();
+	REQUIRE(!xml_utils::parseNetworkBlock(badPortText, parsedHost, parsedConfigPort, parsedStatePort, netErr));
+	REQUIRE(!netErr.empty());
+
+	// 7. Test XmlConfigLoader::loadRunConfig reading <network> from an XML file
+	const std::string tempXmlPath = "test_network_override.xml";
+	{
+		std::ofstream tmp(tempXmlPath);
+		tmp << "<simulationconfig>"
+		    << "<chaser><masskg>120.0</masskg></chaser>"
+		    << "<target><masskg>240.0</masskg></target>"
+		    << "<network><targethost>127.0.0.1</targethost><configport>7101</configport><stateport>7102</stateport></network>"
+		    << "</simulationconfig>\n";
+	}
+	RunConfig netFileConfig{};
+	REQUIRE(XmlConfigLoader::loadRunConfig(tempXmlPath, netFileConfig) == ErrorCode::OK);
+	REQUIRE(netFileConfig.targetHost == "127.0.0.1");
+	REQUIRE(netFileConfig.configPort == 7101);
+	REQUIRE(netFileConfig.statePort == 7102);
+	std::remove(tempXmlPath.c_str());
 
 	std::cout << "[PASS] TestDynamicsEngineBase completed successfully.\n";
 	return 0;

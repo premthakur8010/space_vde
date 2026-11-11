@@ -440,6 +440,11 @@ namespace space_docking::dynamics
 		std::string logDirectory{"logs"};
 		std::string logFileName{"simulation_trajectory.csv"};
 		uint32_t logDecimation{10};
+
+		// UDP network endpoint configuration (loaded dynamically from XML <network>)
+		std::string targetHost{"127.0.0.1"};
+		uint16_t configPort{5001};
+		uint16_t statePort{5002};
 	};
 
 	/**

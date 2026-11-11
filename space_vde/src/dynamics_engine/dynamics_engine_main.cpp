@@ -7,11 +7,11 @@
  *    - On Windows, the default system timer resolution is 15.6 ms. We invoke timeBeginPeriod(1)
  *      to request 1.0 ms precision from the OS scheduler.
  * 2. Configuration Loading:
- *    - Parses simulation_config.xml dynamically via XmlConfigLoader (masses, inertias, initial pos/vel).
- * 3. Non-Blocking UDP Networking:
- *    - Port 5001 (Config Receiver): Listens asynchronously for RunConfigPacket from the UI client,
+ *    - Parses simulation_config.xml dynamically via XmlConfigLoader (masses, inertias, initial pos/vel, UDP ports).
+ * 3. Non-Blocking UDP Networking (BSD Sockets):
+ *    - Config Receiver: Listens asynchronously on XML-configured configport for RunConfigPacket from the UI client,
  *      allowing mid-run parameter updates (mass, inertia, frame mapping) without resetting trajectory.
- *    - Port 5002 (State Broadcaster): Streams StatePacket telemetry to the UI at 125 Hz (every 8 ms).
+ *    - State Broadcaster: Streams StatePacket telemetry to XML-configured targethost:stateport at 125 Hz (every 8 ms).
  * 4. 1 kHz Cyclic Execution Loop:
  *    - Advances 6-DOF physics by dt = 1.0 ms using Semi-Implicit (Symplectic) Euler integration.
  *    - Maps simulated orbital relative kinematics to physical VDE Stewart Platform hardware coordinates.
@@ -22,20 +22,23 @@
 
 #include "space_docking/dynamics_engine/DynamicsEngine.hpp"
 #include "space_docking/dynamics_engine/XmlConfigLoader.hpp"
+#include "space_docking/dynamics_engine/XmlConfigUtils.hpp"
 #include "space_docking/network/Protocol.hpp"
 #include "space_docking/network/UdpSocket.hpp"
 #include "space_docking/utils/LogMacros.hpp"
 #include "space_docking/utils/Logger.hpp"
 #include "space_docking/utils/MathUtils.hpp"
 
-#include <csignal>
-#include <iostream>
-#include <thread>
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
-#include <cstring>
+#include <csignal>
 #include <cstdlib>
-#include <algorithm>
+#include <cstring>
+#include <iostream>
+#include <optional>
+#include <thread>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -56,7 +59,7 @@ namespace
 	using space_docking::utils::quatToEuler;
 }
 
-// Main entry point: runs 1 kHz physics loop, receives UI RunConfig on 5001, broadcasts StatePacket on 5002
+// Main entry point: runs 1 kHz physics loop, receives UI RunConfig & broadcasts StatePacket on XML-configured UDP ports
 int main(int argc, char** argv)
 {
 #if defined(_WIN32)
@@ -65,26 +68,34 @@ int main(int argc, char** argv)
 	timeBeginPeriod(1);
 #endif
 
-	// Default runtime network ports and configuration paths
+	// Default configuration path and optional command-line network overrides (XML provides primary values)
 	std::string configPath = "config/simulation_config.xml";
-	std::string targetHost = space_docking::network::vde_net::kDefaultHost;       // 127.0.0.1 (localhost)
-	uint16_t statePort     = space_docking::network::vde_net::kDefaultStatePort;  // Port 5002: Engine -> UI telemetry
-	uint16_t configPort    = space_docking::network::vde_net::kDefaultConfigPort; // Port 5001: UI -> Engine config
+	std::optional<std::string> cliTargetHost;
+	std::optional<uint16_t>    cliStatePort;
+	std::optional<uint16_t>    cliConfigPort;
 
 	// Parse command-line overrides (e.g., --target-ip 192.168.1.100 --state-port 5002)
 	for (int i = 1; i < argc; ++i)
 	{
 		if (std::strcmp(argv[i], "--target-ip") == 0 && i + 1 < argc)
 		{
-			targetHost = argv[++i];
+			cliTargetHost = argv[++i];
 		}
 		else if (std::strcmp(argv[i], "--state-port") == 0 && i + 1 < argc)
 		{
-			statePort = static_cast<uint16_t>(std::atoi(argv[++i]));
+			uint16_t parsed = 0;
+			if (space_docking::dynamics::xml_utils::parsePort(argv[++i], parsed))
+			{
+				cliStatePort = parsed;
+			}
 		}
 		else if (std::strcmp(argv[i], "--config-port") == 0 && i + 1 < argc)
 		{
-			configPort = static_cast<uint16_t>(std::atoi(argv[++i]));
+			uint16_t parsed = 0;
+			if (space_docking::dynamics::xml_utils::parsePort(argv[++i], parsed))
+			{
+				cliConfigPort = parsed;
+			}
 		}
 		else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)
 		{
@@ -96,15 +107,12 @@ int main(int argc, char** argv)
 		}
 	}
 
-	std::cout << "========================================================\n";
-	std::cout << " Space Docking Dynamics Engine (GSP/FSP HIL Simulation) \n";
-	std::cout << "========================================================\n";
-	std::cout << "Configuration file : " << configPath << "\n";
-	std::cout << "Target UI endpoint : " << targetHost << ":" << statePort << "\n";
-	std::cout << "Config listen port : " << configPort << "\n";
-
-	// 1. Load XML configuration file and handle potential configuration errors
+	// 1. Load XML configuration file (seed fallback network defaults before parsing <network>)
 	space_docking::dynamics::RunConfig config{};
+	config.targetHost = space_docking::network::vde_net::kDefaultHost;
+	config.configPort = space_docking::network::vde_net::kDefaultConfigPort;
+	config.statePort  = space_docking::network::vde_net::kDefaultStatePort;
+
 	space_docking::dynamics::ErrorCode ec = space_docking::dynamics::XmlConfigLoader::loadRunConfig(configPath, config);
 	if (ec != space_docking::dynamics::ErrorCode::OK)
 	{
@@ -112,7 +120,19 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	// 2. If XML has <Logging><Enabled>true</Enabled>, mirror all code-level event logs to simulation.log
+	// Apply any explicit command-line overrides on top of XML-loaded endpoints
+	const std::string targetHost = cliTargetHost.value_or(config.targetHost);
+	const uint16_t    statePort  = cliStatePort.value_or(config.statePort);
+	const uint16_t    configPort = cliConfigPort.value_or(config.configPort);
+
+	std::cout << "========================================================\n";
+	std::cout << " Space Docking Dynamics Engine (GSP/FSP HIL Simulation) \n";
+	std::cout << "========================================================\n";
+	std::cout << "Configuration file : " << configPath << "\n";
+	std::cout << "Target UI endpoint : " << targetHost << ":" << statePort << "\n";
+	std::cout << "Config listen port : " << configPort << "\n";
+
+	// 2. If XML has <logging><enabled>true</enabled>, mirror all code-level event logs to simulation.log
 	// Note: simulation_trajectory.csv is reserved for numerical telemetry state vectors (rolling window).
 	if (config.loggingEnabled)
 	{
@@ -145,9 +165,9 @@ int main(int argc, char** argv)
 	}
 
 	// =========================================================================
-	// UDP Networking Initialization (Approach A: Direct IPC)
+	// UDP Networking Initialization (Cross-Platform BSD Sockets)
 	// =========================================================================
-	// NetSystem::initialize() initializes Winsock on Windows (WSAStartup)
+	// Initializes platform socket layer if needed (no-op on Ubuntu/Linux BSD sockets)
 	space_docking::network::NetSystem::initialize();
 
 	// State Broadcaster: Streams 1049-byte StatePackets to UI Client at 125 Hz.

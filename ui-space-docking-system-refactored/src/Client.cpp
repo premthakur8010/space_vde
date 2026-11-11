@@ -1,7 +1,8 @@
 // =============================================================================
 // src/Client.cpp
-// Implements time/path string formatters, cross-platform non-blocking UDP sockets
-// (Winsock2 on Windows, BSD sockets on POSIX), VisualizationClient packet TX/RX,
+// Implements time/path string formatters, standard BSD non-blocking UDP sockets
+// (native POSIX on Ubuntu/Linux via <sys/socket.h>, compatibility shim on Windows),
+// VisualizationClient packet TX/RX,
 // ParameterRegistry channel registration, ReplayPlayer trajectory evaluation,
 // and AppState command processing.
 // =============================================================================
@@ -24,6 +25,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
@@ -62,25 +64,35 @@ std::string fileNameOf(const std::string& path) {
 // ============================================================================
 
 namespace {
+// Thin platform adapter so all networking code below uses standard BSD socket calls directly
+// (native POSIX sockets on Ubuntu/Linux; mapped onto Windows sockets where POSIX lacks <sys/socket.h>).
 #ifdef _WIN32
-constexpr std::uintptr_t kBadSocket = (std::uintptr_t)INVALID_SOCKET;
-
-// RAII helper that initializes Winsock 2.2 once per process and cleans up at exit.
-struct WinsockInit {
-	WinsockInit()  { WSADATA w = {}; WSAStartup(MAKEWORD(2, 2), &w); }
-	~WinsockInit() { WSACleanup(); }
+using NativeSocket = SOCKET;
+constexpr std::uintptr_t kBadSocket = static_cast<std::uintptr_t>(INVALID_SOCKET);
+struct SocketSubsystemInit {
+	SocketSubsystemInit()  { WSADATA w = {}; WSAStartup(MAKEWORD(2, 2), &w); }
+	~SocketSubsystemInit() { WSACleanup(); }
 };
-void ensureSockets() { static WinsockInit s_init; }
-void closeHandle(std::uintptr_t& h) {
-	if (h != kBadSocket) { ::closesocket((SOCKET)h); h = kBadSocket; }
-}
+void ensureSockets() { static SocketSubsystemInit s_init; }
+bool isInvalidNative(NativeSocket s) { return s == INVALID_SOCKET; }
+void closeNative(NativeSocket s) { ::closesocket(s); }
+bool setNonBlockingNative(NativeSocket s) { u_long nb = 1; return ::ioctlsocket(s, FIONBIO, &nb) == 0; }
 #else
-constexpr std::uintptr_t kBadSocket = ~(std::uintptr_t)0;
+using NativeSocket = int;
+constexpr std::uintptr_t kBadSocket = ~std::uintptr_t{0};
 void ensureSockets() {}
-void closeHandle(std::uintptr_t& h) {
-	if (h != kBadSocket) { ::close((int)h); h = kBadSocket; }
+bool isInvalidNative(NativeSocket s) { return s < 0; }
+void closeNative(NativeSocket s) { ::close(s); }
+bool setNonBlockingNative(NativeSocket s) {
+	const int flags = ::fcntl(s, F_GETFL, 0);
+	return flags >= 0 && ::fcntl(s, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 #endif
+
+NativeSocket toNative(std::uintptr_t h) { return static_cast<NativeSocket>(h); }
+void closeHandle(std::uintptr_t& h) {
+	if (h != kBadSocket) { closeNative(toNative(h)); h = kBadSocket; }
+}
 
 // Builds an IPv4 socket address structure from a dotted-quad IP string and host-order port.
 sockaddr_in makeAddr(const char* host, std::uint16_t port) {
@@ -95,22 +107,12 @@ sockaddr_in makeAddr(const char* host, std::uint16_t port) {
 // to 256 KB so high-rate physics packets do not drop between 120 Hz UI frames.
 std::uintptr_t openUdpNonBlocking() {
 	ensureSockets();
-#ifdef _WIN32
-	SOCKET s = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (s == INVALID_SOCKET) return kBadSocket;
-	u_long nb = 1;
-	if (::ioctlsocket(s, FIONBIO, &nb) != 0) { ::closesocket(s); return kBadSocket; }
-	int rcvBuf = 256 * 1024;
-	::setsockopt(s, SOL_SOCKET, SO_RCVBUF, (const char*)&rcvBuf, sizeof(rcvBuf));
-	return (std::uintptr_t)s;
-#else
-	int s = ::socket(AF_INET, SOCK_DGRAM, 0);
-	if (s < 0) return kBadSocket;
-	::fcntl(s, F_SETFL, ::fcntl(s, F_GETFL, 0) | O_NONBLOCK);
-	int rcvBuf = 256 * 1024;
-	::setsockopt(s, SOL_SOCKET, SO_RCVBUF, &rcvBuf, sizeof(rcvBuf));
-	return (std::uintptr_t)s;
-#endif
+	const NativeSocket s = ::socket(AF_INET, SOCK_DGRAM, 0);
+	if (isInvalidNative(s)) return kBadSocket;
+	if (!setNonBlockingNative(s)) { closeNative(s); return kBadSocket; }
+	const int rcvBuf = 256 * 1024;
+	::setsockopt(s, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&rcvBuf), sizeof(rcvBuf));
+	return static_cast<std::uintptr_t>(s);
 }
 
 // Copies a validated binary StatePacket received off the wire into an application SimSnapshot.
@@ -155,13 +157,10 @@ ErrorCode VisualizationClient::connect(const std::string& host, std::uint16_t co
 	}
 
 	const sockaddr_in bindAddr = makeAddr("0.0.0.0", m_statePort);
-#ifdef _WIN32
-	if (::bind((SOCKET)m_rxHandle, (const sockaddr*)&bindAddr, sizeof(bindAddr)) != 0) return ErrorCode::BindError;
-#else
-	int reuse = 1;
-	::setsockopt((int)m_rxHandle, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-	if (::bind((int)m_rxHandle, (const sockaddr*)&bindAddr, sizeof(bindAddr)) != 0) return ErrorCode::BindError;
-#endif
+	const int reuse = 1;
+	::setsockopt(toNative(m_rxHandle), SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
+	if (::bind(toNative(m_rxHandle), reinterpret_cast<const sockaddr*>(&bindAddr), sizeof(bindAddr)) != 0)
+		return ErrorCode::BindError;
 	return ErrorCode::Ok;
 }
 
@@ -181,12 +180,10 @@ ErrorCode VisualizationClient::sendRunConfig(const RunConfig& cfg) {
 	std::snprintf(p.ngcMode, sizeof(p.ngcMode), "%s", cfg.ngcMode.c_str());
 
 	const sockaddr_in dst = makeAddr(m_host.c_str(), m_configPort);
-#ifdef _WIN32
-	const int sent = ::sendto((SOCKET)m_txHandle, (const char*)&p, (int)sizeof(p), 0, (const sockaddr*)&dst, sizeof(dst));
-#else
-	const ssize_t sent = ::sendto((int)m_txHandle, &p, sizeof(p), 0, (const sockaddr*)&dst, sizeof(dst));
-#endif
-	return sent == (long long)sizeof(p) ? ErrorCode::Ok : ErrorCode::SendError;
+	const long long sent = static_cast<long long>(
+		::sendto(toNative(m_txHandle), reinterpret_cast<const char*>(&p), static_cast<int>(sizeof(p)), 0,
+		         reinterpret_cast<const sockaddr*>(&dst), sizeof(dst)));
+	return sent == static_cast<long long>(sizeof(p)) ? ErrorCode::Ok : ErrorCode::SendError;
 }
 
 // Reads all pending UDP datagrams from the receive buffer without blocking, validates magic/version/size,
@@ -197,18 +194,10 @@ bool VisualizationClient::getLatestState(SimSnapshot& out) {
 	bool gotNew = false;
 
 	for (;;) {
-#ifdef _WIN32
-		const int n = ::recvfrom((SOCKET)m_rxHandle, (char*)&pkt, (int)sizeof(pkt), 0, nullptr, nullptr);
-		if (n < 0) {
-			const int err = WSAGetLastError();
-			if (err == WSAEWOULDBLOCK || err == WSAECONNRESET) break;
-			break;
-		}
-#else
-		const ssize_t n = ::recvfrom((int)m_rxHandle, &pkt, sizeof(pkt), 0, nullptr, nullptr);
+		const long long n = static_cast<long long>(
+			::recvfrom(toNative(m_rxHandle), reinterpret_cast<char*>(&pkt), static_cast<int>(sizeof(pkt)), 0, nullptr, nullptr));
 		if (n <= 0) break;
-#endif
-		if (n == (int)sizeof(pkt) && pkt.magic == net::kProtocolMagic && pkt.version == net::kProtocolVersion) {
+		if (n == static_cast<long long>(sizeof(pkt)) && pkt.magic == net::kProtocolMagic && pkt.version == net::kProtocolVersion) {
 			if (!m_hasState || pkt.sequence >= m_lastSequence) {
 				newest         = pkt;
 				m_lastSequence = pkt.sequence;

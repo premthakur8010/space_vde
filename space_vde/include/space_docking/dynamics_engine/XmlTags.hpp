@@ -30,6 +30,12 @@ namespace space_docking::dynamics::xml_tags
 	constexpr const char* kPlatform        = "platform";
 	constexpr const char* kFrameMapping    = "framemapping";
 
+	// Network block
+	constexpr const char* kNetwork         = "network";
+	constexpr const char* kTargetHost      = "targethost";
+	constexpr const char* kConfigPort      = "configport";
+	constexpr const char* kStatePort       = "stateport";
+
 	// Logging block
 	constexpr const char* kLogging         = "logging";
 	constexpr const char* kEnabled         = "enabled";

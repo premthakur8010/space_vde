@@ -85,6 +85,20 @@
     </platform>
 
     <!-- ===================================================================== -->
+    <!-- UDP Network Endpoints (Dynamics Engine <-> Visualization Client)      -->
+    <!-- ===================================================================== -->
+    <network>
+        <!-- Destination IP address for UDP telemetry broadcast (e.g. 127.0.0.1 for local workstation) -->
+        <targethost>127.0.0.1</targethost>
+
+        <!-- UDP port on which Dynamics Engine receives RunConfigPacket from UI -->
+        <configport>5001</configport>
+
+        <!-- UDP port to which Dynamics Engine streams StatePacket telemetry to UI -->
+        <stateport>5002</stateport>
+    </network>
+
+    <!-- ===================================================================== -->
     <!-- Simulation Logging & Output Provision                                 -->
     <!-- ===================================================================== -->
     <!-- 

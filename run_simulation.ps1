@@ -21,7 +21,7 @@ if (-not (Test-Path $UiExe)) {
     exit 1
 }
 
-Write-Host "`n[1/2] Starting Dynamics Engine (1000 Hz, UDP 5001/5002)..." -ForegroundColor Green
+Write-Host "`n[1/2] Starting Dynamics Engine (1000 Hz, XML-configured UDP)..." -ForegroundColor Green
 Start-Process -FilePath "cmd.exe" -ArgumentList "/c cd /d `"$EngineDir`" && `"$EngineExe`" config\simulation_config.xml"
 
 Start-Sleep -Seconds 2

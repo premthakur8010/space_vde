@@ -19,6 +19,7 @@
 #pragma pack(push, 1)
 namespace space_docking::network::vde_net
 {
+	// Fallback UDP endpoint defaults used when <network> is omitted in simulation_config.xml
 	inline constexpr const char*   kDefaultHost       = "127.0.0.1";
 	inline constexpr std::uint16_t kDefaultConfigPort = 5001; // Outbound: UI -> Engine
 	inline constexpr std::uint16_t kDefaultStatePort  = 5002; // Inbound:  Engine -> UI
@@ -40,7 +41,7 @@ namespace space_docking::network::vde_net
 	 *
 	 * WIRE SPECIFICATION:
 	 * - Size: Exactly 261 bytes (enforced by #pragma pack(push, 1) and static_assert).
-	 * - Direction: UI Client (outbound) -> Dynamics Engine (listen on Port 5001).
+	 * - Direction: UI Client (outbound) -> Dynamics Engine (configured configPort, default 5001).
 	 * - Update Semantics: Transmitted initially on simulator startup, and re-transmitted
 	 *   dynamically whenever the operator changes masses, inertias, or platform mountings in the GUI.
 	 */
@@ -65,7 +66,7 @@ namespace space_docking::network::vde_net
 	 *
 	 * WIRE SPECIFICATION:
 	 * - Size: Exactly 1049 bytes (enforced by #pragma pack(push, 1) and static_assert).
-	 * - Direction: Dynamics Engine (outbound) -> UI Client (listen on Port 5002).
+	 * - Direction: Dynamics Engine (outbound) -> UI Client (configured statePort, default 5002).
 	 * - Rate: 125 Hz (downsampled from 1000 Hz physics loop: stepCount % 8 == 0).
 	 * - Telemetry Contents:
 	 *   1. Sequence counter and simulation epoch timestamp.

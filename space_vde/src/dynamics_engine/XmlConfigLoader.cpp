@@ -4,112 +4,25 @@
  */
 
 #include "space_docking/dynamics_engine/XmlConfigLoader.hpp"
+#include "space_docking/dynamics_engine/XmlConfigUtils.hpp"
 #include "space_docking/dynamics_engine/XmlTags.hpp"
 #include "space_docking/utils/LogMacros.hpp"
 #include "space_docking/utils/MathUtils.hpp"
 
-#include <algorithm>
-#include <cctype>
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <string_view>
 
 namespace space_docking::dynamics
 {
-	namespace
-	{
-		// Returns lowercase version of a string_view with leading/trailing whitespace trimmed
-		std::string toLowerTrimmed(std::string_view sv)
-		{
-			const auto start = sv.find_first_not_of(" \t\r\n");
-			if (start == std::string_view::npos)
-			{
-				return "";
-			}
-			const auto end = sv.find_last_not_of(" \t\r\n");
-			sv = sv.substr(start, end - start + 1);
-
-			std::string result;
-			result.reserve(sv.size());
-			for (char c : sv)
-			{
-				result.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-			}
-			return result;
-		}
-
-		// Finds substring case-insensitively, returns index in haystack
-		size_t findCaseInsensitive(std::string_view haystack, std::string_view needle, size_t pos = 0)
-		{
-			if (needle.empty())
-			{
-				return pos <= haystack.size() ? pos : std::string_view::npos;
-			}
-			if (pos + needle.size() > haystack.size())
-			{
-				return std::string_view::npos;
-			}
-
-			auto it = std::search(
-				haystack.begin() + pos, haystack.end(),
-				needle.begin(), needle.end(),
-				[](char c1, char c2) {
-					return std::tolower(static_cast<unsigned char>(c1)) ==
-					       std::tolower(static_cast<unsigned char>(c2));
-				});
-
-			if (it == haystack.end())
-			{
-				return std::string_view::npos;
-			}
-			return static_cast<size_t>(std::distance(haystack.begin(), it));
-		}
-
-		// Extracts text between <tagName> and </tagName> inside a parent block.
-		// Tag search is case-insensitive, but the extracted content preserves original casing!
-		std::string extractTagContent(const std::string& xml, const std::string& tagName)
-		{
-			const std::string openTag = "<" + tagName + ">";
-			const std::string closeTag = "</" + tagName + ">";
-
-			const size_t start = findCaseInsensitive(xml, openTag);
-			if (start == std::string::npos)
-			{
-				return "";
-			}
-
-			const size_t contentStart = start + openTag.length();
-			const size_t end = findCaseInsensitive(xml, closeTag, contentStart);
-			if (end == std::string::npos)
-			{
-				return "";
-			}
-
-			return xml.substr(contentStart, end - contentStart);
-		}
-
-		double extractDouble(const std::string& xml, const std::string& tagName, double defaultValue = 0.0)
-		{
-			const std::string content = extractTagContent(xml, tagName);
-			if (content.empty())
-			{
-				return defaultValue;
-			}
-			try
-			{
-				return std::stod(content);
-			}
-			catch (...)
-			{
-				return defaultValue;
-			}
-		}
-	}
-
-	// Parses simulation_config.xml and populates RunConfig (masses, inertias, initial pos/vel, logging)
+	// Parses simulation_config.xml and populates RunConfig (masses, inertias, initial pos/vel, network, logging)
 	ErrorCode XmlConfigLoader::loadRunConfig(const std::string& filePath, RunConfig& outConfig)
 	{
+		using xml_utils::extractDouble;
+		using xml_utils::extractTagContent;
+		using xml_utils::toLowerTrimmed;
+		using xml_utils::trim;
+
 		// 1. Verify file accessibility on filesystem
 		std::ifstream file(filePath);
 		if (!file.is_open())
@@ -118,10 +31,10 @@ namespace space_docking::dynamics
 			return ErrorCode::CONFIG_FILE_NOT_FOUND;
 		}
 
-		// 2. Read whole file into buffer and verify non-empty content
+		// 2. Read whole file into buffer, strip XML comments, and verify non-empty content
 		std::stringstream buffer;
 		buffer << file.rdbuf();
-		const std::string xml = buffer.str();
+		const std::string xml = xml_utils::stripXmlComments(buffer.str());
 
 		if (xml.empty())
 		{
@@ -260,13 +173,13 @@ namespace space_docking::dynamics
 			}
 
 			// Paths preserve original casing (case-sensitive on Unix/Linux filesystems)
-			const std::string logDir = extractTagContent(loggingBlock, tags::kLogDirectory);
+			const std::string logDir = trim(extractTagContent(loggingBlock, tags::kLogDirectory));
 			if (!logDir.empty())
 			{
 				outConfig.logDirectory = logDir;
 			}
 
-			const std::string logFile = extractTagContent(loggingBlock, tags::kLogFileName);
+			const std::string logFile = trim(extractTagContent(loggingBlock, tags::kLogFileName));
 			if (!logFile.empty())
 			{
 				outConfig.logFileName = logFile;
@@ -293,6 +206,14 @@ namespace space_docking::dynamics
 					return ErrorCode::CONFIG_INVALID_VALUE;
 				}
 			}
+		}
+
+		// Parse UDP Network endpoint block (<targethost>, <configport>, <stateport>)
+		std::string netErr;
+		if (!xml_utils::parseNetworkBlock(xml, outConfig.targetHost, outConfig.configPort, outConfig.statePort, netErr))
+		{
+			SD_LOG_ERROR(ErrorCode::CONFIG_INVALID_VALUE, netErr);
+			return ErrorCode::CONFIG_INVALID_VALUE;
 		}
 
 		SD_LOG_INFO("Successfully loaded simulation configuration from " << filePath

@@ -1,7 +1,7 @@
 // =============================================================================
 // src/main.cpp
 // Application entry point for the VDE Docking Simulator UI client.
-// Parses UDP endpoint CLI flags (`--host`, `--config-port`, `--state-port`),
+// Resolves UDP endpoints from simulation_config.xml with CLI overrides,
 // initializes GLFW, OpenGL 4.5 (via GLAD), Dear ImGui (docking + multi-viewports),
 // and ImPlot, connects AppState to the external Dynamics Engine over UDP, and
 // drives the 120 Hz (8.333 ms) render and telemetry polling loop.
@@ -10,6 +10,7 @@
 #include "Client.hpp"
 #include "UiCore.hpp"
 #include "UiWindows.hpp"
+#include "space_docking/dynamics_engine/XmlConfigUtils.hpp"
 
 #include <glad/gl.h>  // must precede GLFW
 #include <GLFW/glfw3.h>
@@ -22,6 +23,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -46,17 +48,46 @@ struct CliOptions {
 	std::uint16_t statePort  = vde::net::kDefaultStatePort;
 };
 
-// Parses optional `--host <ip>`, `--config-port <port>`, and `--state-port <port>` arguments.
-CliOptions parseArgs(int argc, char** argv) {
+// Loads UDP endpoint configuration from simulation_config.xml, then applies explicit CLI overrides
+// (`--host <ip>`, `--config-port <port>`, `--state-port <port>`, `--config <xml>`).
+CliOptions resolveNetworkOptions(int argc, char** argv) {
 	CliOptions opt;
+	std::string configPath;
+	std::optional<std::string>   cliHost;
+	std::optional<std::uint16_t> cliConfigPort;
+	std::optional<std::uint16_t> cliStatePort;
+
 	for (int i = 1; i < argc; ++i) {
 		if (std::strcmp(argv[i], "--host") == 0 && i + 1 < argc)
-			opt.host = argv[++i];
-		else if (std::strcmp(argv[i], "--config-port") == 0 && i + 1 < argc)
-			opt.configPort = (std::uint16_t)std::atoi(argv[++i]);
-		else if (std::strcmp(argv[i], "--state-port") == 0 && i + 1 < argc)
-			opt.statePort = (std::uint16_t)std::atoi(argv[++i]);
+			cliHost = argv[++i];
+		else if (std::strcmp(argv[i], "--config-port") == 0 && i + 1 < argc) {
+			std::uint16_t port = 0;
+			if (space_docking::dynamics::xml_utils::parsePort(argv[++i], port)) cliConfigPort = port;
+		} else if (std::strcmp(argv[i], "--state-port") == 0 && i + 1 < argc) {
+			std::uint16_t port = 0;
+			if (space_docking::dynamics::xml_utils::parsePort(argv[++i], port)) cliStatePort = port;
+		} else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
+			configPath = argv[++i];
+		}
 	}
+
+	const char* candidates[] = {
+		configPath.empty() ? nullptr : configPath.c_str(),
+		"config/simulation_config.xml",
+		"../space_vde/config/simulation_config.xml",
+		"space_vde/config/simulation_config.xml"
+	};
+	std::string unusedTargetHost = opt.host;
+	for (const char* path : candidates) {
+		if (path && space_docking::dynamics::xml_utils::loadNetworkEndpointsFromFile(
+		                path, unusedTargetHost, opt.configPort, opt.statePort)) {
+			break;
+		}
+	}
+
+	if (cliHost)       opt.host       = *cliHost;
+	if (cliConfigPort) opt.configPort = *cliConfigPort;
+	if (cliStatePort)  opt.statePort  = *cliStatePort;
 	return opt;
 }
 
@@ -83,7 +114,7 @@ void glfwErrorCallback(int code, const char* desc) {
 } // namespace
 
 int main(int argc, char** argv) {
-	const CliOptions cli = parseArgs(argc, argv);
+	const CliOptions cli = resolveNetworkOptions(argc, argv);
 
 	glfwSetErrorCallback(glfwErrorCallback);
 	if (!glfwInit()) return 1;

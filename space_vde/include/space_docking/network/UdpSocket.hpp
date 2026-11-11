@@ -4,22 +4,9 @@
 #include <cstdint>
 #include <string>
 
-#if defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-using SocketFd = SOCKET;
-#else
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-using SocketFd = int;
-#endif
-
 /**
- * @brief Cross-platform non-blocking UDP datagram socket wrapper.
+ * @brief Cross-platform non-blocking UDP datagram socket wrapper using standard BSD socket semantics.
+ * Uses native POSIX sockets on Ubuntu/Linux and maps onto standard socket calls on Windows.
  * Preconditions: Sockets must be bound or connected before transmit/receive.
  * Thread-safety: Individual calls are safe, but concurrent recv/send on the same instance should be managed by caller.
  */
@@ -57,6 +44,6 @@ namespace space_docking::network
 		int recvFrom(void* buffer, size_t maxSize);
 
 	private:
-		SocketFd m_socket;
+		std::uintptr_t m_socket;
 	};
 }
