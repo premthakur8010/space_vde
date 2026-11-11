@@ -16,39 +16,14 @@
 #include <cstdarg>
 #include <cstdio>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
-
 namespace vde::ui {
 
 namespace {
 Fonts g_fonts;
 
-// Resolves the directory containing the running executable so bundled fonts can be found regardless of CWD.
-std::string exeDir() {
-	char buf[4096] = {};
-#ifdef _WIN32
-	GetModuleFileNameA(nullptr, buf, sizeof(buf) - 1);
-#else
-	if (readlink("/proc/self/exe", buf, sizeof(buf) - 1) < 0) return ".";
-#endif
-	std::string p(buf);
-	std::size_t slash = p.find_last_of("/\\");
-	return slash == std::string::npos ? "." : p.substr(0, slash);
-}
-
 // Loads a TrueType font from `<exe>/fonts/` first, falling back to the source-tree font directory.
 ImFont* loadFont(const char* file, float size) {
-	const std::string candidates[] = {exeDir() + "/fonts/" + file, std::string(VDE_FONT_DIR) + "/" + file};
+	const std::string candidates[] = {executableDir() + "/fonts/" + file, std::string(VDE_FONT_DIR) + "/" + file};
 	for (const std::string& path : candidates) {
 		if (FILE* f = std::fopen(path.c_str(), "rb")) {
 			std::fclose(f);

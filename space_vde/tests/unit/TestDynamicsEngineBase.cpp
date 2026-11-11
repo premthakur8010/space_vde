@@ -75,19 +75,11 @@ int main()
 	REQUIRE(engineTest.getChaser().getMass() == 150.0);
 	REQUIRE(engineTest.getTarget().getMass() == 250.0);
 
-	// 4. Test XmlConfigLoader
-	std::string configPath = "config/simulation_config.xml";
-	if (!std::filesystem::exists(configPath))
-	{
-		if (std::filesystem::exists("../config/simulation_config.xml"))
-		{
-			configPath = "../config/simulation_config.xml";
-		}
-		else if (std::filesystem::exists("space_vde/config/simulation_config.xml"))
-		{
-			configPath = "space_vde/config/simulation_config.xml";
-		}
-	}
+	// 4. Test XmlConfigLoader and shared XML path resolution
+	const std::string configPath = xml_utils::resolveConfigFilePath("simulation_config.xml");
+	REQUIRE(std::filesystem::exists(configPath));
+	REQUIRE(std::filesystem::exists(xml_utils::resolveConfigFilePath("default.xml")));
+	REQUIRE(xml_utils::resolveConfigFilePath("missing_file.xml") == "config/missing_file.xml");
 
 	RunConfig xmlConfig{};
 	ErrorCode xmlEc = XmlConfigLoader::loadRunConfig(configPath, xmlConfig);
@@ -154,6 +146,7 @@ int main()
 	REQUIRE(netFileConfig.targetHost == "127.0.0.1");
 	REQUIRE(netFileConfig.configPort == 7101);
 	REQUIRE(netFileConfig.statePort == 7102);
+	REQUIRE(xml_utils::resolveConfigFilePath("simulation_config.xml", tempXmlPath) == tempXmlPath);
 	std::remove(tempXmlPath.c_str());
 
 	std::cout << "[PASS] TestDynamicsEngineBase completed successfully.\n";

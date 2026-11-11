@@ -20,6 +20,7 @@
 #include <functional>
 #include <numbers>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -69,10 +70,12 @@ bool nearlyEqual(T a, T b, T eps) {
 	return std::abs(a - b) <= eps * std::max({T(1), std::abs(a), std::abs(b)});
 }
 
-// Formatting helpers for simulation clock strings, output filenames, and path display.
+// Formatting and path helpers for simulation clock strings, filenames, and XML config lookup.
 std::string formatSimTime(double seconds);        // Formats elapsed seconds as "MM:SS.mmm"
 std::string fileTimestamp();                      // Formats local wall-clock time as "YYYY-MM-DD_HHMM"
 std::string fileNameOf(const std::string& path);  // Extracts the base filename from a full path
+std::string executableDir();                      // Directory containing the running UI executable
+std::string resolveConfigPath(std::string_view fileName, std::string_view explicitPath = {});
 
 // ============================================================================
 // Telemetry Snapshots & Run Configuration

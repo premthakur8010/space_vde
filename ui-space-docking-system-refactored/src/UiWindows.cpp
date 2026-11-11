@@ -152,8 +152,8 @@ void drawSpacecraftValuesPanel(const SpacecraftBundle& sc, SpacecraftPanelState&
 class ConfigXmlDialog {
 public:
 	void open(const AppState& app) {
-		m_configFilePath = resolveConfigPath();
-		m_defaultFilePath = resolveDefaultConfigPath();
+		m_configFilePath = vde::resolveConfigPath("simulation_config.xml");
+		m_defaultFilePath = vde::resolveConfigPath("default.xml");
 		loadFromXmlFile(m_configFilePath, app);
 		m_title = "Edit XML Configuration (" + m_configFilePath + ")###ConfigXmlDialog";
 		m_statusMessage.clear();
@@ -385,36 +385,8 @@ private:
 	NetworkFields  m_network;
 	LoggingFields  m_logging;
 
-	static std::string resolveConfigPath() {
-		const char* candidates[] = {
-			"config/simulation_config.xml",
-			"../space_vde/config/simulation_config.xml",
-			"space_vde/config/simulation_config.xml",
-			"space_vde-version_1/space_vde/config/simulation_config.xml"
-		};
-		for (const char* path : candidates) {
-			std::ifstream f(path);
-			if (f.is_open()) return path;
-		}
-		return "config/simulation_config.xml";
-	}
-
-	static std::string resolveDefaultConfigPath() {
-		const char* candidates[] = {
-			"config/default.xml",
-			"../space_vde/config/default.xml",
-			"space_vde/config/default.xml",
-			"space_vde-version_1/space_vde/config/default.xml"
-		};
-		for (const char* path : candidates) {
-			std::ifstream f(path);
-			if (f.is_open()) return path;
-		}
-		return "config/default.xml";
-	}
-
 	void loadFromDefaultXmlFile(const AppState& app) {
-		m_defaultFilePath = resolveDefaultConfigPath();
+		m_defaultFilePath = vde::resolveConfigPath("default.xml");
 		std::ifstream file(m_defaultFilePath);
 		if (file.is_open()) {
 			std::stringstream ss;

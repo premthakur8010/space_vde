@@ -10,10 +10,12 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace space_docking::dynamics::xml_utils
 {
@@ -233,6 +235,78 @@ namespace space_docking::dynamics::xml_utils
 		}
 		std::string err;
 		return parseNetworkBlock(cleanXml, outTargetHost, outConfigPort, outStatePort, err);
+	}
+
+	/**
+	 * @brief Resolves `config/<fileName>` dynamically from CWD or an extra search root.
+	 * Checks `explicitPath` first if set, then walks up ancestor directories looking for
+	 * `config/<fileName>` or `space_vde/config/<fileName>` without hardcoded folder names.
+	 */
+	[[nodiscard]] inline std::string resolveConfigFilePath(std::string_view fileName,
+	                                                         std::string_view explicitPath = {},
+	                                                         std::string_view extraSearchRoot = {})
+	{
+		namespace fs = std::filesystem;
+		std::error_code ec;
+
+		if (!explicitPath.empty())
+		{
+			const fs::path explicitFile(explicitPath);
+			if (fs::is_regular_file(explicitFile, ec))
+			{
+				return explicitFile.lexically_normal().generic_string();
+			}
+		}
+
+		const fs::path targetSuffix = fs::path("config") / fileName;
+		const fs::path repoSuffix   = fs::path("space_vde") / targetSuffix;
+
+		auto matchUnder = [&](const fs::path& base, std::string& out) -> bool
+		{
+			for (const fs::path& suffix : {targetSuffix, repoSuffix})
+			{
+				const fs::path candidate = (base.empty() ? suffix : (base / suffix)).lexically_normal();
+				if (fs::is_regular_file(candidate, ec))
+				{
+					out = candidate.generic_string();
+					return true;
+				}
+			}
+			return false;
+		};
+
+		// Walk upward from CWD using relative prefixes ("", "..", "../..", "../../..")
+		std::string resolved;
+		fs::path relPrefix;
+		for (int depth = 0; depth < 4; ++depth)
+		{
+			if (matchUnder(relPrefix, resolved))
+			{
+				return resolved;
+			}
+			relPrefix = relPrefix.empty() ? fs::path("..") : (relPrefix / "..");
+		}
+
+		// Fallback: walk upward from extraSearchRoot (e.g. executable directory) when launched externally
+		if (!extraSearchRoot.empty())
+		{
+			fs::path absDir(extraSearchRoot);
+			for (int depth = 0; depth < 4 && !absDir.empty(); ++depth)
+			{
+				if (matchUnder(absDir, resolved))
+				{
+					return resolved;
+				}
+				const fs::path parent = absDir.parent_path();
+				if (parent == absDir)
+				{
+					break;
+				}
+				absDir = parent;
+			}
+		}
+
+		return targetSuffix.generic_string();
 	}
 }
 

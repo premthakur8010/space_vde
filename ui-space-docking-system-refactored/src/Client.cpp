@@ -7,6 +7,7 @@
 // and AppState command processing.
 // =============================================================================
 #include "Client.hpp"
+#include "space_docking/dynamics_engine/XmlConfigUtils.hpp"
 
 #include <cassert>
 #include <cstdio>
@@ -23,6 +24,7 @@
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
 #else
 #include <arpa/inet.h>
 #include <errno.h>
@@ -59,6 +61,24 @@ std::string fileTimestamp() {
 std::string fileNameOf(const std::string& path) {
 	const std::size_t slash = path.find_last_of("/\\");
 	return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+// Resolves the directory containing the running executable so bundled fonts/configs work from any CWD.
+std::string executableDir() {
+	char buf[4096] = {};
+#ifdef _WIN32
+	GetModuleFileNameA(nullptr, buf, sizeof(buf) - 1);
+#else
+	if (readlink("/proc/self/exe", buf, sizeof(buf) - 1) < 0) return ".";
+#endif
+	const std::string p(buf);
+	const std::size_t slash = p.find_last_of("/\\");
+	return slash == std::string::npos ? "." : p.substr(0, slash);
+}
+
+// Resolves config XML paths dynamically from CWD or executable ancestors without hardcoded folder names.
+std::string resolveConfigPath(std::string_view fileName, std::string_view explicitPath) {
+	return space_docking::dynamics::xml_utils::resolveConfigFilePath(fileName, explicitPath, executableDir());
 }
 
 // ============================================================================
@@ -406,19 +426,11 @@ void AppState::apply(const Command& command) {
 
 // Loads simulation_config.xml from disk if accessible, or falls back to human-readable XML summary.
 std::string AppState::loadConfigXml() const {
-	const char* candidates[] = {
-		"config/simulation_config.xml",
-		"../space_vde/config/simulation_config.xml",
-		"space_vde/config/simulation_config.xml",
-		"space_vde-version_1/space_vde/config/simulation_config.xml"
-	};
-	for (const char* path : candidates) {
-		std::ifstream f(path);
-		if (f.is_open()) {
-			std::stringstream ss;
-			ss << f.rdbuf();
-			return ss.str();
-		}
+	std::ifstream f(resolveConfigPath("simulation_config.xml"));
+	if (f.is_open()) {
+		std::stringstream ss;
+		ss << f.rdbuf();
+		return ss.str();
 	}
 
 	char buf[2048];

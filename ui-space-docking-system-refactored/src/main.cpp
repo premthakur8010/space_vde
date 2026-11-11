@@ -71,20 +71,10 @@ CliOptions resolveNetworkOptions(int argc, char** argv) {
 		}
 	}
 
-	const char* candidates[] = {
-		configPath.empty() ? nullptr : configPath.c_str(),
-		"config/simulation_config.xml",
-		"../space_vde/config/simulation_config.xml",
-		"space_vde/config/simulation_config.xml",
-		"space_vde-version_1/space_vde/config/simulation_config.xml"
-	};
+	const std::string resolvedConfig = vde::resolveConfigPath("simulation_config.xml", configPath);
 	std::string unusedTargetHost = opt.host;
-	for (const char* path : candidates) {
-		if (path && space_docking::dynamics::xml_utils::loadNetworkEndpointsFromFile(
-		                path, unusedTargetHost, opt.configPort, opt.statePort)) {
-			break;
-		}
-	}
+	space_docking::dynamics::xml_utils::loadNetworkEndpointsFromFile(
+	    resolvedConfig, unusedTargetHost, opt.configPort, opt.statePort);
 
 	if (cliHost)       opt.host       = *cliHost;
 	if (cliConfigPort) opt.configPort = *cliConfigPort;
