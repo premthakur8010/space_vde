@@ -4,6 +4,7 @@
 #include "space_docking/dynamics_engine/Types.hpp"
 #include "space_docking/dynamics_engine/XmlConfigLoader.hpp"
 #include "space_docking/dynamics_engine/XmlConfigUtils.hpp"
+#include "space_docking/utils/MathUtils.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -131,14 +132,18 @@ int main()
 	REQUIRE(!xml_utils::parseNetworkBlock(badPortText, parsedHost, parsedConfigPort, parsedStatePort, netErr));
 	REQUIRE(!netErr.empty());
 
-	// 7. Test XmlConfigLoader::loadRunConfig reading <network> from an XML file
+	// 7. Test XmlConfigLoader::loadRunConfig reading <network> and HIL tags from an XML file
 	const std::string tempXmlPath = "test_network_override.xml";
 	{
 		std::ofstream tmp(tempXmlPath);
 		tmp << "<simulationconfig>"
 		    << "<chaser><masskg>120.0</masskg></chaser>"
 		    << "<target><masskg>240.0</masskg></target>"
-		    << "<network><targethost>127.0.0.1</targethost><configport>7101</configport><stateport>7102</stateport></network>"
+		    << "<network>"
+		    << "<targethost>127.0.0.1</targethost><configport>7101</configport><stateport>7102</stateport>"
+		    << "<hardwareenabled>false</hardwareenabled><hardwarehost>10.0.0.5</hardwarehost>"
+		    << "<hardwarecommandport>6006</hardwarecommandport><hardwaretelemetryport>6005</hardwaretelemetryport>"
+		    << "</network>"
 		    << "</simulationconfig>\n";
 	}
 	RunConfig netFileConfig{};
@@ -146,8 +151,36 @@ int main()
 	REQUIRE(netFileConfig.targetHost == "127.0.0.1");
 	REQUIRE(netFileConfig.configPort == 7101);
 	REQUIRE(netFileConfig.statePort == 7102);
+	REQUIRE(netFileConfig.hardwareEnabled == false);
+	REQUIRE(netFileConfig.hardwareHost == "10.0.0.5");
+	REQUIRE(netFileConfig.hardwareCommandPort == 6006);
+	REQUIRE(netFileConfig.hardwareTelemetryPort == 6005);
 	REQUIRE(xml_utils::resolveConfigFilePath("simulation_config.xml", tempXmlPath) == tempXmlPath);
 	std::remove(tempXmlPath.c_str());
+
+	// 8. Test invalid HIL hardware tags rejection & DynamicsEngine telemetry getters
+	bool hwEnabled = true;
+	std::string hwHost = "127.0.0.1";
+	uint16_t hwCmdPort = 5006;
+	uint16_t hwTelPort = 5005;
+	netErr.clear();
+	REQUIRE(!xml_utils::parseHardwareNetworkBlock("<network><hardwareenabled>maybe</hardwareenabled></network>",
+	                                              hwEnabled, hwHost, hwCmdPort, hwTelPort, netErr));
+	netErr.clear();
+	REQUIRE(!xml_utils::parseHardwareNetworkBlock("<network><hardwarecommandport>0</hardwarecommandport></network>",
+	                                              hwEnabled, hwHost, hwCmdPort, hwTelPort, netErr));
+
+	Telemetry hilTel{};
+	hilTel.timestamp = 0.5;
+	hilTel.groundStewartPlatformForces = { {0.1, 0.2, 0.3}, {-15.0, 0.0, 0.0} };
+	engine.setTelemetry(hilTel);
+	REQUIRE(space_docking::utils::nearlyEqual(engine.getTelemetry().timestamp, 0.5));
+	REQUIRE(space_docking::utils::nearlyEqual(engine.getTelemetry().groundStewartPlatformForces.force.x, -15.0));
+
+	GspFeedback gspFb{};
+	gspFb.legLengths = { 0.41, 0.42, 0.43, 0.44, 0.45, 0.46 };
+	engine.setGspFeedback(gspFb);
+	REQUIRE(space_docking::utils::nearlyEqual(engine.getGspFeedback().legLengths[5], 0.46));
 
 	std::cout << "[PASS] TestDynamicsEngineBase completed successfully.\n";
 	return 0;

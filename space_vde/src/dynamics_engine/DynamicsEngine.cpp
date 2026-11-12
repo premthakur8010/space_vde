@@ -222,6 +222,16 @@ namespace space_docking::dynamics
 		m_latestGspFeedback = f;
 	}
 
+	const Telemetry& DynamicsEngine::getTelemetry() const noexcept
+	{
+		return m_currentTelemetry;
+	}
+
+	const GspFeedback& DynamicsEngine::getGspFeedback() const noexcept
+	{
+		return m_latestGspFeedback;
+	}
+
 	// Returns read-only reference to the Chaser spacecraft dynamics object
 	const SpacecraftDynamics& DynamicsEngine::getChaser() const noexcept
 	{

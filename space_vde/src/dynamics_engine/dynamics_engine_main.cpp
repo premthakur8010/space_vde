@@ -30,6 +30,7 @@
 #include "space_docking/utils/MathUtils.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -57,6 +58,62 @@ namespace
 	}
 
 	using space_docking::utils::quatToEuler;
+
+	[[nodiscard]] space_docking::network::vde_net::HardwareCommandPacket buildHardwareCommand(
+		uint64_t seq,
+		double timeS,
+		space_docking::network::vde_net::HardwareCommandMode mode,
+		const space_docking::dynamics::RelativeState& rel) noexcept
+	{
+		space_docking::network::vde_net::HardwareCommandPacket cmd{};
+		cmd.magic            = space_docking::network::vde_net::kProtocolMagic;
+		cmd.version          = space_docking::network::vde_net::kProtocolVersion;
+		cmd.sequence         = seq;
+		cmd.timeS            = timeS;
+		cmd.commandMode      = static_cast<std::uint8_t>(mode);
+		cmd.relativePose     = rel.pose;
+		cmd.relativeVelocity = rel.velocity;
+		return cmd;
+	}
+
+	void applyHardwareTelemetry(const space_docking::network::vde_net::HardwareTelemetryPacket& hwPkt,
+	                            const space_docking::dynamics::RelativeState& commandedRel,
+	                            space_docking::dynamics::DynamicsEngine& engine,
+	                            space_docking::dynamics::ForceTorque& outRawMoving,
+	                            space_docking::dynamics::ForceTorque& outRawOverhead) noexcept
+	{
+		outRawMoving   = hwPkt.gspForceTorque;
+		outRawOverhead = hwPkt.fspForceTorque;
+
+		// Gate closed-loop contact wrenches on contactActive != 0 so pre-contact load-cell noise
+		// does not perturb free-space approach while raw readings remain visible in UI telemetry.
+		space_docking::dynamics::Telemetry telemetry{};
+		telemetry.timestamp                 = hwPkt.timeS;
+		telemetry.groundStewartPlatformPose = hwPkt.measuredRelativePose;
+		if (hwPkt.contactActive != 0)
+		{
+			telemetry.groundStewartPlatformForces = hwPkt.gspForceTorque;
+			telemetry.flightStewartPlatformForces = hwPkt.fspForceTorque;
+		}
+		engine.setTelemetry(telemetry);
+
+		space_docking::dynamics::GspFeedback feedback{};
+		for (size_t i = 0; i < feedback.legLengths.size(); ++i)
+		{
+			feedback.legLengths[i] = hwPkt.legLengths[i];
+		}
+
+		// Feed mechanical tracking offset (commanded - measured) into pose computation rather
+		// than absolute separation, since SpacecraftPoseComputation offsets Target by feedback.pose.position.
+		feedback.pose.position.x = commandedRel.pose.position.x - hwPkt.measuredRelativePose.position.x;
+		feedback.pose.position.y = commandedRel.pose.position.y - hwPkt.measuredRelativePose.position.y;
+		feedback.pose.position.z = commandedRel.pose.position.z - hwPkt.measuredRelativePose.position.z;
+
+		const auto& q = hwPkt.measuredRelativePose.orientation;
+		const double qNormSq = q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z;
+		feedback.pose.orientation = (qNormSq > 0.1) ? q : space_docking::dynamics::Quaternion{1.0, 0.0, 0.0, 0.0};
+		engine.setGspFeedback(feedback);
+	}
 }
 
 // Main entry point: runs 1 kHz physics loop, receives UI RunConfig & broadcasts StatePacket on XML-configured UDP ports
@@ -73,6 +130,10 @@ int main(int argc, char** argv)
 	std::optional<std::string> cliTargetHost;
 	std::optional<uint16_t>    cliStatePort;
 	std::optional<uint16_t>    cliConfigPort;
+	std::optional<bool>        cliHwEnabled;
+	std::optional<std::string> cliHwHost;
+	std::optional<uint16_t>    cliHwCmdPort;
+	std::optional<uint16_t>    cliHwTelPort;
 
 	// Parse command-line overrides (e.g., --target-ip 192.168.1.100 --state-port 5002)
 	for (int i = 1; i < argc; ++i)
@@ -97,6 +158,30 @@ int main(int argc, char** argv)
 				cliConfigPort = parsed;
 			}
 		}
+		else if (std::strcmp(argv[i], "--hw-host") == 0 && i + 1 < argc)
+		{
+			cliHwHost = argv[++i];
+		}
+		else if (std::strcmp(argv[i], "--hw-cmd-port") == 0 && i + 1 < argc)
+		{
+			uint16_t parsed = 0;
+			if (space_docking::dynamics::xml_utils::parsePort(argv[++i], parsed))
+			{
+				cliHwCmdPort = parsed;
+			}
+		}
+		else if (std::strcmp(argv[i], "--hw-tel-port") == 0 && i + 1 < argc)
+		{
+			uint16_t parsed = 0;
+			if (space_docking::dynamics::xml_utils::parsePort(argv[++i], parsed))
+			{
+				cliHwTelPort = parsed;
+			}
+		}
+		else if (std::strcmp(argv[i], "--no-hw") == 0)
+		{
+			cliHwEnabled = false;
+		}
 		else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)
 		{
 			configPath = argv[++i];
@@ -109,9 +194,13 @@ int main(int argc, char** argv)
 
 	// 1. Load XML configuration file (seed fallback network defaults before parsing <network>)
 	space_docking::dynamics::RunConfig config{};
-	config.targetHost = space_docking::network::vde_net::kDefaultHost;
-	config.configPort = space_docking::network::vde_net::kDefaultConfigPort;
-	config.statePort  = space_docking::network::vde_net::kDefaultStatePort;
+	config.targetHost            = space_docking::network::vde_net::kDefaultHost;
+	config.configPort            = space_docking::network::vde_net::kDefaultConfigPort;
+	config.statePort             = space_docking::network::vde_net::kDefaultStatePort;
+	config.hardwareEnabled       = true;
+	config.hardwareHost          = space_docking::network::vde_net::kDefaultHost;
+	config.hardwareCommandPort   = space_docking::network::vde_net::kDefaultHwCommandPort;
+	config.hardwareTelemetryPort = space_docking::network::vde_net::kDefaultHwTelemetryPort;
 
 	space_docking::dynamics::ErrorCode ec = space_docking::dynamics::XmlConfigLoader::loadRunConfig(configPath, config);
 	if (ec != space_docking::dynamics::ErrorCode::OK)
@@ -124,6 +213,10 @@ int main(int argc, char** argv)
 	const std::string targetHost = cliTargetHost.value_or(config.targetHost);
 	const uint16_t    statePort  = cliStatePort.value_or(config.statePort);
 	const uint16_t    configPort = cliConfigPort.value_or(config.configPort);
+	const bool        hwEnabled  = cliHwEnabled.value_or(config.hardwareEnabled);
+	const std::string hwHost     = cliHwHost.value_or(config.hardwareHost);
+	const uint16_t    hwCmdPort  = cliHwCmdPort.value_or(config.hardwareCommandPort);
+	const uint16_t    hwTelPort  = cliHwTelPort.value_or(config.hardwareTelemetryPort);
 
 	std::cout << "========================================================\n";
 	std::cout << " Space Docking Dynamics Engine (GSP/FSP HIL Simulation) \n";
@@ -131,6 +224,9 @@ int main(int argc, char** argv)
 	std::cout << "Configuration file : " << configPath << "\n";
 	std::cout << "Target UI endpoint : " << targetHost << ":" << statePort << "\n";
 	std::cout << "Config listen port : " << configPort << "\n";
+	std::cout << "HIL Hardware link  : " << (hwEnabled ? "ENABLED" : "DISABLED")
+	          << " (Cmd -> " << hwHost << ":" << hwCmdPort
+	          << ", Tel <- :" << hwTelPort << ")\n";
 
 	// 2. If XML has <logging><enabled>true</enabled>, mirror all code-level event logs to simulation.log
 	// Note: simulation_trajectory.csv is reserved for numerical telemetry state vectors (rolling window).
@@ -197,6 +293,36 @@ int main(int argc, char** argv)
 		}
 	}
 
+	// HIL Hardware Link: streams 105-byte HardwareCommandPacket (500 Hz) and receives 225-byte HardwareTelemetryPacket.
+	space_docking::network::UdpSocket hwCommandSender;
+	space_docking::network::UdpSocket hwTelemetryReceiver;
+	if (hwEnabled)
+	{
+		if (hwCommandSender.open())
+		{
+			hwCommandSender.setNonBlocking(true);
+		}
+		else
+		{
+			SD_LOG_ERROR(space_docking::dynamics::ErrorCode::NETWORK_ERROR, "Failed to open hwCommandSender UDP socket");
+		}
+
+		if (hwTelemetryReceiver.open())
+		{
+			hwTelemetryReceiver.setNonBlocking(true);
+			hwTelemetryReceiver.setReuseAddr(true);
+			if (!hwTelemetryReceiver.bindSocket(hwTelPort, "0.0.0.0"))
+			{
+				SD_LOG_ERROR(space_docking::dynamics::ErrorCode::SOCKET_BIND_FAILED,
+				             "Failed to bind hwTelemetryReceiver to port " << hwTelPort);
+			}
+			else
+			{
+				SD_LOG_INFO("HIL telemetry receiver active on port " << hwTelPort);
+			}
+		}
+	}
+
 	// Register OS signal handler for graceful shutdown on Ctrl+C (SIGINT)
 	std::signal(SIGINT, signalHandler);
 
@@ -204,7 +330,22 @@ int main(int argc, char** argv)
 	          << targetHost << ":" << statePort << " (125 Hz). Press Ctrl+C to terminate." << std::endl;
 
 	uint64_t stepCount = 0;
+	uint64_t hwCmdSeq = 0;
+	bool hasHardwareLink = false;
+	space_docking::dynamics::ForceTorque latestRawMoving{};
+	space_docking::dynamics::ForceTorque latestRawOverhead{};
 	constexpr double dt = 0.001; // 1 ms physics integration timestep (1000 Hz)
+
+	// Send initial relative docking pose command immediately so hardware synchronizes at t=0
+	if (hwEnabled && hwCommandSender.isValid())
+	{
+		const auto initialCmd = buildHardwareCommand(
+			++hwCmdSeq,
+			0.0,
+			space_docking::network::vde_net::HardwareCommandMode::TRACK_POSE,
+			engine.getRelativeState());
+		hwCommandSender.sendTo(&initialCmd, sizeof(initialCmd), hwHost.c_str(), hwCmdPort);
+	}
 
 	// =========================================================================
 	// Main Cyclic Real-Time Execution Loop (1 kHz / 1 ms period)
@@ -243,12 +384,65 @@ int main(int argc, char** argv)
 		}
 
 		// ---------------------------------------------------------------------
+		// Step 1b: Drain Incoming HIL Hardware Telemetry (Keep Freshest Valid)
+		// ---------------------------------------------------------------------
+		if (hwEnabled && hwTelemetryReceiver.isValid())
+		{
+			space_docking::network::vde_net::HardwareTelemetryPacket hwTelPkt{};
+			space_docking::network::vde_net::HardwareTelemetryPacket latestHwTel{};
+			bool gotValidTel = false;
+
+			while (true)
+			{
+				const int hwBytes = hwTelemetryReceiver.recvFrom(&hwTelPkt, sizeof(hwTelPkt));
+				if (hwBytes <= 0)
+				{
+					break;
+				}
+				if (hwBytes == static_cast<int>(sizeof(hwTelPkt)) &&
+				    hwTelPkt.magic == space_docking::network::vde_net::kProtocolMagic &&
+				    hwTelPkt.version == space_docking::network::vde_net::kProtocolVersion)
+				{
+					latestHwTel = hwTelPkt;
+					gotValidTel = true;
+				}
+			}
+
+			if (gotValidTel)
+			{
+				if (!hasHardwareLink)
+				{
+					hasHardwareLink = true;
+					SD_LOG_INFO("HIL link established with VDE Hardware/Emulator on port " << hwTelPort);
+				}
+				applyHardwareTelemetry(latestHwTel,
+				                       engine.getRelativeState(),
+				                       engine,
+				                       latestRawMoving,
+				                       latestRawOverhead);
+			}
+		}
+
+		// ---------------------------------------------------------------------
 		// Step 2: Advance Physics Engine by dt (1.0 ms)
 		// ---------------------------------------------------------------------
 		// Integrates Chaser and Target equations of motion via Symplectic Euler, resolves kinematics,
 		// computes relative state vector Y, and buffers CSV telemetry.
 		engine.step(dt);
 		stepCount++;
+
+		// ---------------------------------------------------------------------
+		// Step 2b: Stream Master HIL Command to VDE Hardware / Emulator (500 Hz)
+		// ---------------------------------------------------------------------
+		if (hwEnabled && hwCommandSender.isValid() && (stepCount % 2 == 0))
+		{
+			const auto hwCmd = buildHardwareCommand(
+				++hwCmdSeq,
+				stepCount * dt,
+				space_docking::network::vde_net::HardwareCommandMode::TRACK_POSE,
+				engine.getRelativeState());
+			hwCommandSender.sendTo(&hwCmd, sizeof(hwCmd), hwHost.c_str(), hwCmdPort);
+		}
 
 		// ---------------------------------------------------------------------
 		// Step 3: Telemetry Downsampling & UDP Broadcast to UI (125 Hz)
@@ -334,8 +528,9 @@ int main(int argc, char** argv)
 			pkt.vde.orientationRad = { vdeRoll, vdePitch, vdeYaw };
 			pkt.vde.orientationRateRadS = { vdeRollRate, vdePitchRate, vdeYawRate };
 			// ForceTorque layout: torque first, then force
-			pkt.vde.moving = { {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0} };
-			pkt.vde.overhead = { {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0} };
+			const auto& engTelemetry = engine.getTelemetry();
+			pkt.vde.moving   = hasHardwareLink ? latestRawMoving   : engTelemetry.groundStewartPlatformForces;
+			pkt.vde.overhead = hasHardwareLink ? latestRawOverhead : engTelemetry.flightStewartPlatformForces;
 
 			pkt.ngcChaser = { {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0} };
 			pkt.ngcTarget = { {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0} };
@@ -389,6 +584,16 @@ int main(int argc, char** argv)
 				std::this_thread::yield();
 			}
 		}
+	}
+
+	if (hwEnabled && hwCommandSender.isValid())
+	{
+		const auto stopCmd = buildHardwareCommand(
+			++hwCmdSeq,
+			stepCount * dt,
+			space_docking::network::vde_net::HardwareCommandMode::STOP_HOLD,
+			engine.getRelativeState());
+		hwCommandSender.sendTo(&stopCmd, sizeof(stopCmd), hwHost.c_str(), hwCmdPort);
 	}
 
 	std::cout << "\nDynamics Engine cleanly stopped after " << stepCount << " cycles (" << (stepCount * dt) << " seconds)." << std::endl;

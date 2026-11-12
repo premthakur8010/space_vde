@@ -61,6 +61,8 @@ namespace space_docking::dynamics
 		void setGstFeedback(const GspFeedback& f) noexcept { setGspFeedback(f); }
 
 		[[nodiscard]] const RunConfig& getConfig() const noexcept { return m_config; }
+		[[nodiscard]] const Telemetry& getTelemetry() const noexcept;
+		[[nodiscard]] const GspFeedback& getGspFeedback() const noexcept;
 		[[nodiscard]] const SpacecraftDynamics& getChaser() const noexcept;
 		[[nodiscard]] const SpacecraftDynamics& getTarget() const noexcept;
 		[[nodiscard]] const RelativeState& getRelativeState() const noexcept;

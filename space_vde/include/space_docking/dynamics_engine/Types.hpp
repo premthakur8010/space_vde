@@ -445,6 +445,12 @@ namespace space_docking::dynamics
 		std::string targetHost{"127.0.0.1"};
 		uint16_t configPort{5001};
 		uint16_t statePort{5002};
+
+		// Hardware-in-the-Loop (HIL) VDE UDP endpoints (loaded dynamically from XML <network>)
+		bool hardwareEnabled{true};
+		std::string hardwareHost{"127.0.0.1"};
+		uint16_t hardwareCommandPort{5006};
+		uint16_t hardwareTelemetryPort{5005};
 	};
 
 	/**

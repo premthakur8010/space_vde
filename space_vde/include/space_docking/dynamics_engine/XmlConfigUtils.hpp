@@ -214,6 +214,67 @@ namespace space_docking::dynamics::xml_utils
 	}
 
 	/**
+	 * @brief Parses optional HIL hardware endpoint tags inside `<network>`
+	 * (`<hardwareenabled>`, `<hardwarehost>`, `<hardwarecommandport>`, `<hardwaretelemetryport>`).
+	 * Retains existing defaults if tags are omitted.
+	 */
+	[[nodiscard]] inline bool parseHardwareNetworkBlock(const std::string& xml,
+	                                                    bool& outHardwareEnabled,
+	                                                    std::string& outHardwareHost,
+	                                                    uint16_t& outHardwareCommandPort,
+	                                                    uint16_t& outHardwareTelemetryPort,
+	                                                    std::string& outError)
+	{
+		const std::string netBlock = extractTagContent(xml, xml_tags::kNetwork);
+		if (netBlock.empty())
+		{
+			return true;
+		}
+
+		const std::string rawEnabled = trim(extractTagContent(netBlock, xml_tags::kHardwareEnabled));
+		if (!rawEnabled.empty())
+		{
+			const std::string enabledStr = toLowerTrimmed(rawEnabled);
+			if (enabledStr == xml_values::kTrue || enabledStr == xml_values::kOne)
+			{
+				outHardwareEnabled = true;
+			}
+			else if (enabledStr == xml_values::kFalse || enabledStr == xml_values::kZero)
+			{
+				outHardwareEnabled = false;
+			}
+			else
+			{
+				outError = "Invalid <" + std::string(xml_tags::kHardwareEnabled) + "> boolean value: '" + rawEnabled
+				         + "' (expected 'true', 'false', '1', or '0')";
+				return false;
+			}
+		}
+
+		const std::string rawHwHost = trim(extractTagContent(netBlock, xml_tags::kHardwareHost));
+		if (!rawHwHost.empty())
+		{
+			outHardwareHost = rawHwHost;
+		}
+
+		const std::string rawCmdPort = trim(extractTagContent(netBlock, xml_tags::kHardwareCommandPort));
+		if (!rawCmdPort.empty() && !parsePort(rawCmdPort, outHardwareCommandPort))
+		{
+			outError = "Invalid <" + std::string(xml_tags::kHardwareCommandPort) + "> port value: '" + rawCmdPort + "' (expected 1..65535)";
+			return false;
+		}
+
+		const std::string rawTelPort = trim(extractTagContent(netBlock, xml_tags::kHardwareTelemetryPort));
+		if (!rawTelPort.empty() && !parsePort(rawTelPort, outHardwareTelemetryPort))
+		{
+			outError = "Invalid <" + std::string(xml_tags::kHardwareTelemetryPort) + "> port value: '" + rawTelPort + "' (expected 1..65535)";
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
 	 * @brief Reads UDP endpoints from an XML config file on disk if accessible and valid.
 	 */
 	inline bool loadNetworkEndpointsFromFile(const std::string& filePath,

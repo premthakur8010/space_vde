@@ -20,21 +20,31 @@
 namespace space_docking::network::vde_net
 {
 	// Fallback UDP endpoint defaults used when <network> is omitted in simulation_config.xml
-	inline constexpr const char*   kDefaultHost       = "127.0.0.1";
-	inline constexpr std::uint16_t kDefaultConfigPort = 5001; // Outbound: UI -> Engine
-	inline constexpr std::uint16_t kDefaultStatePort  = 5002; // Inbound:  Engine -> UI
-	inline constexpr std::uint32_t kProtocolMagic     = 0x56444531u; // ASCII "VDE1"
-	inline constexpr std::uint32_t kProtocolVersion   = 1u;
+	inline constexpr const char*   kDefaultHost            = "127.0.0.1";
+	inline constexpr std::uint16_t kDefaultConfigPort      = 5001; // Inbound:  UI -> Engine
+	inline constexpr std::uint16_t kDefaultStatePort       = 5002; // Outbound: Engine -> UI
+	inline constexpr std::uint16_t kDefaultHwTelemetryPort = 5005; // Inbound:  VDE Hardware/Emulator -> Engine
+	inline constexpr std::uint16_t kDefaultHwCommandPort   = 5006; // Outbound: Engine -> VDE Hardware/Emulator
+	inline constexpr std::uint32_t kProtocolMagic          = 0x56444531u; // ASCII "VDE1"
+	inline constexpr std::uint32_t kProtocolVersion        = 1u;
 
 	// Canonical type aliases directly mapped to Dynamics Engine single-source-of-truth types
 	using Vec3 = space_docking::dynamics::Vector3;
 	using Rpy = space_docking::dynamics::EulerAngles;
 	using Mat3 = space_docking::dynamics::Matrix3;
+	using Pose = space_docking::dynamics::Pose;
 	using ForceTorque = space_docking::dynamics::ForceTorque;
 	using Quaternion = space_docking::dynamics::Quaternion;
 	using RelativeState = space_docking::dynamics::RelativeState;
 	using VdeState = space_docking::dynamics::VdeState;
 	using SpacecraftState = space_docking::dynamics::SpacecraftState;
+
+	enum class HardwareCommandMode : std::uint8_t
+	{
+		TRACK_POSE = 0,
+		STOP_HOLD  = 1,
+		RESET_HOME = 2
+	};
 
 	/**
 	 * @brief Fixed-layout binary datagram sent from UI client to Dynamics Engine to configure or update a run.
@@ -94,5 +104,51 @@ namespace space_docking::network::vde_net
 
 	static_assert(sizeof(RunConfigPacket) == 261, "RunConfigPacket must be exactly 261 bytes");
 	static_assert(sizeof(StatePacket) == 1049, "StatePacket must be exactly 1049 bytes");
+
+	/**
+	 * @brief Master HIL command datagram sent from Dynamics Engine to VDE Hardware / Emulator (500 Hz).
+	 *
+	 * WIRE SPECIFICATION (Master Contract):
+	 * - Size: Exactly 105 bytes (#pragma pack(push, 1), little-endian SI units).
+	 * - Direction: Dynamics Engine (outbound) -> VDE Hardware / Emulator (configured hardwareCommandPort, default 5006).
+	 * - Coordinate Frame: Canonical space_vde Simulation Frame (docs/conventions.md):
+	 *   +X = docking approach (-0.550 m initial separation -> 0.0 m contact -> >0.0 m penetration),
+	 *   +Y = up [m], +Z = lateral right [m], orientation = scalar-first unit quaternion q(w,x,y,z).
+	 */
+	struct HardwareCommandPacket
+	{
+		std::uint32_t magic       = kProtocolMagic;   // Magic header: 0x56444531 ("VDE1")
+		std::uint32_t version     = kProtocolVersion; // Protocol revision: 1
+		std::uint64_t sequence    = 0;                // Monotonic command packet counter
+		double        timeS       = 0.0;              // Elapsed simulation time [s]
+		std::uint8_t  commandMode = 0;                // 0 = TRACK_POSE, 1 = STOP_HOLD, 2 = RESET_HOME
+		Pose          relativePose{};                 // Commanded relative docking pose (56 bytes)
+		Vec3          relativeVelocity{};             // Commanded relative linear velocity [m/s] (24 bytes)
+	};
+
+	/**
+	 * @brief Master HIL telemetry datagram streamed from VDE Hardware / Emulator to Dynamics Engine.
+	 *
+	 * WIRE SPECIFICATION (Master Contract):
+	 * - Size: Exactly 225 bytes (#pragma pack(push, 1), little-endian SI units).
+	 * - Direction: VDE Hardware / Emulator (outbound) -> Dynamics Engine (configured hardwareTelemetryPort, default 5005).
+	 * - Coordinate Frame: Canonical space_vde Simulation Frame (+X docking, +Y up, +Z lateral right; q(w,x,y,z)).
+	 * - ForceTorque Order: Matches Types.hpp::ForceTorque strictly (torque [N*m] FIRST, force [N] SECOND).
+	 */
+	struct HardwareTelemetryPacket
+	{
+		std::uint32_t magic               = kProtocolMagic;   // Magic header: 0x56444531 ("VDE1")
+		std::uint32_t version             = kProtocolVersion; // Protocol revision: 1
+		std::uint64_t sequence            = 0;                // Monotonic hardware/emulator tick counter
+		double        timeS               = 0.0;              // Hardware elapsed time [s]
+		Pose          measuredRelativePose{};                 // FK-solved / measured relative pose in Simulation Frame (56 bytes)
+		double        legLengths[6]{};                        // 6 Stewart platform actuator leg lengths [m] (48 bytes)
+		ForceTorque   gspForceTorque{};                       // Moving/GSP load-cell wrench: torque [N*m], then force [N] (48 bytes)
+		ForceTorque   fspForceTorque{};                       // Overhead/FSP load-cell wrench: torque [N*m], then force [N] (48 bytes)
+		std::uint8_t  contactActive       = 0;                // 1 = docking contact active, 0 = free motion
+	};
+
+	static_assert(sizeof(HardwareCommandPacket) == 105, "HardwareCommandPacket must be exactly 105 bytes");
+	static_assert(sizeof(HardwareTelemetryPacket) == 225, "HardwareTelemetryPacket must be exactly 225 bytes");
 }
 #pragma pack(pop)

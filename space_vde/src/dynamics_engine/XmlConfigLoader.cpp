@@ -216,6 +216,18 @@ namespace space_docking::dynamics
 			return ErrorCode::CONFIG_INVALID_VALUE;
 		}
 
+		// Parse optional HIL hardware endpoint block (<hardwareenabled>, <hardwarehost>, <hardwarecommandport>, <hardwaretelemetryport>)
+		if (!xml_utils::parseHardwareNetworkBlock(xml,
+		                                          outConfig.hardwareEnabled,
+		                                          outConfig.hardwareHost,
+		                                          outConfig.hardwareCommandPort,
+		                                          outConfig.hardwareTelemetryPort,
+		                                          netErr))
+		{
+			SD_LOG_ERROR(ErrorCode::CONFIG_INVALID_VALUE, netErr);
+			return ErrorCode::CONFIG_INVALID_VALUE;
+		}
+
 		SD_LOG_INFO("Successfully loaded simulation configuration from " << filePath
 		            << " (Chaser: " << outConfig.chaserMass << " kg, Target: " << outConfig.targetMass << " kg)");
 
