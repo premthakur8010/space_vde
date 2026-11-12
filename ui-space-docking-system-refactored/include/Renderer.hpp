@@ -59,8 +59,8 @@ private:
 	GLuint m_resolveFbo = 0, m_texture = 0;
 };
 
-// Owns an OpenGL Vertex Array Object (VAO) and interleaved position+normal Vertex Buffer Object (VBO),
-// loaded from Wavefront .obj files for unit geometry primitives.
+// Owns an OpenGL Vertex Array Object (VAO) and interleaved position+normal+color Vertex Buffer Object (VBO),
+// loaded from Wavefront .obj/.mtl files.
 class Mesh {
 public:
 	Mesh() = default;
@@ -68,7 +68,7 @@ public:
 	Mesh(const Mesh&) = delete;
 	Mesh& operator=(const Mesh&) = delete;
 
-	void upload(const std::vector<float>& posNormal);
+	void upload(const std::vector<float>& posNormalColor);
 	void draw() const;
 
 	static bool loadObj(Mesh& m, const std::string& path);
@@ -76,6 +76,20 @@ public:
 private:
 	GLuint  m_vao = 0, m_vbo = 0;
 	GLsizei m_count = 0;
+};
+
+// Identifies each standalone 3D object .obj model loaded by Painter.
+enum class ModelId {
+	Chaser,
+	Target,
+	Earth,
+	VdeBase,
+	VdeGantry,
+	VdePlatform,
+	LegSleeve,
+	LegPiston,
+	LegJoint,
+	AxisTriad
 };
 
 // Spherical Z-up orbit camera supporting mouse drag rotation, screen-space panning, and scroll-wheel zoom.
@@ -103,7 +117,7 @@ struct Label {
 	float       side = 1.0f; // Horizontal leader-line direction: +1 right, -1 left
 };
 
-// Immediate-mode 3D shape renderer that shares reusable unit meshes and collects 3D annotation labels.
+// Immediate-mode 3D object renderer that owns dedicated .obj models and collects 3D annotation labels.
 class Painter {
 public:
 	Painter();
@@ -111,27 +125,27 @@ public:
 	void begin(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& cameraPos);
 	void overlayPass();
 
-	void box(const glm::mat4& model, const glm::vec3& color);
-	void box(const glm::vec3& center, const glm::vec3& size, const glm::vec3& color,
-			 const glm::mat4& parent = glm::mat4(1.0f));
-	void cylinder(const glm::vec3& a, const glm::vec3& b, float radius, const glm::vec3& color);
-	void cone(const glm::vec3& base, const glm::vec3& apex, float radius, const glm::vec3& color);
-	void sphere(const glm::vec3& center, float radius, const glm::vec3& color, int detail = 0);
+	void drawModel(ModelId id, const glm::mat4& model = glm::mat4(1.0f), const glm::vec3& tint = glm::vec3(1.0f));
+	void drawSegment(ModelId id, const glm::vec3& a, const glm::vec3& b, float radius,
+					 const glm::vec3& tint = glm::vec3(1.0f));
+	void drawJoint(const glm::vec3& center, float radius);
+	void drawTriad(const glm::mat4& frame, float length, const char* name);
 
 	void label(const glm::vec3& world, std::string text, LabelKind kind, float side = 1.0f);
 	const std::vector<Label>& labels() const { return m_labels; }
 
 private:
-	void draw(const Mesh& mesh, const glm::mat4& model, const glm::vec3& color);
+	const Mesh& meshFor(ModelId id) const;
+	void draw(const Mesh& mesh, const glm::mat4& model, const glm::vec3& tint);
 	static glm::mat4 alongSegment(const glm::vec3& a, const glm::vec3& b, float radius);
 
 	Shader             m_shader;
-	Mesh               m_box, m_cylinder, m_cone, m_sphere, m_sphereFine;
+	Mesh               m_chaser, m_target, m_earth;
+	Mesh               m_vdeBase, m_vdeGantry, m_vdePlatform;
+	Mesh               m_legSleeve, m_legPiston, m_legJoint;
+	Mesh               m_axisTriad;
 	std::vector<Label> m_labels;
 };
-
-// Draws an RGB XYZ coordinate-frame triad (Red = X, Green = Y, Blue = Z) and optional frame-origin label.
-void drawAxisTriad(Painter& painter, const glm::mat4& frame, float length, const char* name);
 
 // Abstract interface implemented by each 3D scene rendered inside a SceneView viewport.
 class IScene {

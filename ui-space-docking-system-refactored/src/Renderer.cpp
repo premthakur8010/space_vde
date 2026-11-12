@@ -14,9 +14,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
+#include <unordered_map>
 
 namespace vde::render {
 
@@ -61,23 +63,26 @@ GLuint compileShader(GLenum type, const char* src) {
 	return s;
 }
 
-// Appends one interleaved 6-float vertex (px, py, pz, nx, ny, nz) into a mesh buffer.
-void pushVertex(std::vector<float>& v, glm::vec3 p, glm::vec3 n) {
-	v.insert(v.end(), {p.x, p.y, p.z, n.x, n.y, n.z});
+// Appends one interleaved 9-float vertex (px, py, pz, nx, ny, nz, r, g, b) into a mesh buffer.
+void pushVertex(std::vector<float>& v, glm::vec3 p, glm::vec3 n, glm::vec3 c) {
+	v.insert(v.end(), {p.x, p.y, p.z, n.x, n.y, n.z, c.r, c.g, c.b});
 }
 
-// Vertex shader transforming local positions and normals into world space and clip space.
+// Vertex shader transforming local positions, normals, and material colors into world and clip space.
 const char* kVertex = R"(#version 450 core
 layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec3 a_normal;
+layout(location = 2) in vec3 a_color;
 uniform mat4 u_model;
 uniform mat4 u_viewProjection;
 out vec3 v_normal;
 out vec3 v_world;
+out vec3 v_color;
 void main() {
 	vec4 world = u_model * vec4(a_position, 1.0);
 	v_world = world.xyz;
 	v_normal = mat3(transpose(inverse(u_model))) * a_normal;
+	v_color = a_color;
 	gl_Position = u_viewProjection * world;
 }
 )";
@@ -86,6 +91,7 @@ void main() {
 const char* kFragment = R"(#version 450 core
 in vec3 v_normal;
 in vec3 v_world;
+in vec3 v_color;
 uniform vec3 u_color;
 uniform vec3 u_cameraPos;
 out vec4 fragColor;
@@ -94,7 +100,7 @@ void main() {
 	if (dot(n, u_cameraPos - v_world) < 0.0) n = -n;
 	float key  = max(dot(n, normalize(vec3(0.4, -0.6, 0.8))), 0.0);
 	float fill = max(dot(n, normalize(vec3(-0.6, 0.5, 0.3))), 0.0);
-	vec3 c = u_color * (0.38 + 0.55 * key + 0.22 * fill);
+	vec3 c = (v_color * u_color) * (0.38 + 0.55 * key + 0.22 * fill);
 	fragColor = vec4(min(c, vec3(1.0)), 1.0);
 }
 )";
@@ -191,21 +197,24 @@ Mesh::~Mesh() {
 	if (m_vao) glDeleteVertexArrays(1, &m_vao);
 }
 
-// Configures DSA vertex attributes (location 0 = position, location 1 = normal) and uploads triangle data.
+// Configures DSA vertex attributes (location 0 = position, location 1 = normal, location 2 = color) and uploads triangle data.
 void Mesh::upload(const std::vector<float>& data) {
 	if (!m_vao) {
 		glCreateVertexArrays(1, &m_vao);
 		glCreateBuffers(1, &m_vbo);
-		glVertexArrayVertexBuffer(m_vao, 0, m_vbo, 0, 6 * sizeof(float));
+		glVertexArrayVertexBuffer(m_vao, 0, m_vbo, 0, 9 * sizeof(float));
 		glEnableVertexArrayAttrib(m_vao, 0);
 		glVertexArrayAttribFormat(m_vao, 0, 3, GL_FLOAT, GL_FALSE, 0);
 		glVertexArrayAttribBinding(m_vao, 0, 0);
 		glEnableVertexArrayAttrib(m_vao, 1);
 		glVertexArrayAttribFormat(m_vao, 1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float));
 		glVertexArrayAttribBinding(m_vao, 1, 0);
+		glEnableVertexArrayAttrib(m_vao, 2);
+		glVertexArrayAttribFormat(m_vao, 2, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float));
+		glVertexArrayAttribBinding(m_vao, 2, 0);
 	}
 	glNamedBufferData(m_vbo, (GLsizeiptr)(data.size() * sizeof(float)), data.data(), GL_STATIC_DRAW);
-	m_count = (GLsizei)(data.size() / 6);
+	m_count = (GLsizei)(data.size() / 9);
 }
 
 void Mesh::draw() const {
@@ -215,7 +224,34 @@ void Mesh::draw() const {
 	glBindVertexArray(0);
 }
 
-// Parses a Wavefront .obj file (v, vn, vt, f with triangle/polygon fan triangulation) and uploads to GPU.
+namespace {
+// Loads diffuse Kd colors keyed by material name from a Wavefront .mtl file.
+void loadMtlFile(const std::filesystem::path& mtlPath,
+                 std::unordered_map<std::string, glm::vec3>& materials) {
+	std::ifstream file(mtlPath);
+	if (!file.is_open()) return;
+	std::string line, currentMtl;
+	while (std::getline(file, line)) {
+		const size_t first = line.find_first_not_of(" \t\r\n");
+		if (first == std::string::npos || line[first] == '#') continue;
+		const size_t last = line.find_last_not_of(" \t\r\n");
+		const std::string trimmed = line.substr(first, last - first + 1);
+		if (trimmed.rfind("newmtl ", 0) == 0 || trimmed.rfind("newmtl\t", 0) == 0) {
+			const size_t nameStart = trimmed.find_first_not_of(" \t", 6);
+			currentMtl = (nameStart != std::string::npos) ? trimmed.substr(nameStart) : "";
+		} else if (!currentMtl.empty() && (trimmed.rfind("Kd ", 0) == 0 || trimmed.rfind("Kd\t", 0) == 0)) {
+			const char* p    = trimmed.c_str() + 2;
+			char*       next = nullptr;
+			const float r    = std::strtof(p, &next); p = next;
+			const float g    = std::strtof(p, &next); p = next;
+			const float b    = std::strtof(p, &next);
+			materials[currentMtl] = glm::vec3(r, g, b);
+		}
+	}
+}
+} // namespace
+
+// Parses a Wavefront .obj/.mtl file (v, vn, vt, mtllib, usemtl, f) and uploads to GPU.
 bool Mesh::loadObj(Mesh& m, const std::string& path) {
 	std::ifstream file(path, std::ios::binary | std::ios::ate);
 	if (!file.is_open()) {
@@ -233,6 +269,10 @@ bool Mesh::loadObj(Mesh& m, const std::string& path) {
 		std::fprintf(stderr, "[OBJ] Failed to read model file: %s\n", path.c_str());
 		return false;
 	}
+
+	const std::filesystem::path objDir = std::filesystem::path(path).parent_path();
+	std::unordered_map<std::string, glm::vec3> materials;
+	glm::vec3 currentColor(1.0f, 1.0f, 1.0f);
 
 	std::vector<glm::vec3> positions;
 	std::vector<glm::vec3> normals;
@@ -260,7 +300,21 @@ bool Mesh::loadObj(Mesh& m, const std::string& path) {
 		const char* lineEnd = cur;
 		while (lineEnd < end && *lineEnd != '\n' && *lineEnd != '\r') ++lineEnd;
 
-		if (cur[0] == 'v' && (cur + 1 < lineEnd) && (cur[1] == ' ' || cur[1] == '\t')) {
+		const size_t lineLen = static_cast<size_t>(lineEnd - cur);
+		if (lineLen > 7 && std::strncmp(cur, "mtllib", 6) == 0 && (cur[6] == ' ' || cur[6] == '\t')) {
+			const char* p = cur + 7;
+			while (p < lineEnd && (*p == ' ' || *p == '\t')) ++p;
+			const char* q = lineEnd;
+			while (q > p && (q[-1] == ' ' || q[-1] == '\t')) --q;
+			if (q > p) loadMtlFile(objDir / std::string(p, q), materials);
+		} else if (lineLen > 7 && std::strncmp(cur, "usemtl", 6) == 0 && (cur[6] == ' ' || cur[6] == '\t')) {
+			const char* p = cur + 7;
+			while (p < lineEnd && (*p == ' ' || *p == '\t')) ++p;
+			const char* q = lineEnd;
+			while (q > p && (q[-1] == ' ' || q[-1] == '\t')) --q;
+			const auto it = materials.find(std::string(p, q));
+			currentColor = (it != materials.end()) ? it->second : glm::vec3(1.0f);
+		} else if (cur[0] == 'v' && (cur + 1 < lineEnd) && (cur[1] == ' ' || cur[1] == '\t')) {
 			const char* p    = cur + 2;
 			char*       next = nullptr;
 			const float x    = std::strtof(p, &next); p = next;
@@ -329,7 +383,7 @@ bool Mesh::loadObj(Mesh& m, const std::string& path) {
 				for (int k = 0; k < 3; ++k) {
 					const glm::vec3 pos = positions[c[k].vIdx];
 					const glm::vec3 nrm = hasNormals ? normals[c[k].vnIdx] : faceN;
-					pushVertex(vertices, pos, nrm);
+					pushVertex(vertices, pos, nrm, currentColor);
 				}
 			}
 		}
@@ -371,14 +425,19 @@ void OrbitCamera::zoom(float wheelSteps) {
 	distance = std::clamp(distance * std::pow(kZoomPerWheelStep, wheelSteps), kMinDistanceM, kMaxDistanceM);
 }
 
-// Compiles the lighting shader and loads shared unit .obj meshes once per SceneView.
+// Compiles the lighting shader and loads dedicated .obj object models once per SceneView.
 Painter::Painter() {
 	m_shader.build(kVertex, kFragment);
-	Mesh::loadObj(m_box, resolveModelPath("box.obj"));
-	Mesh::loadObj(m_cylinder, resolveModelPath("cylinder.obj"));
-	Mesh::loadObj(m_cone, resolveModelPath("cone.obj"));
-	Mesh::loadObj(m_sphere, resolveModelPath("sphere.obj"));
-	Mesh::loadObj(m_sphereFine, resolveModelPath("sphere_fine.obj"));
+	Mesh::loadObj(m_chaser, resolveModelPath("chaser.obj"));
+	Mesh::loadObj(m_target, resolveModelPath("target.obj"));
+	Mesh::loadObj(m_earth, resolveModelPath("earth.obj"));
+	Mesh::loadObj(m_vdeBase, resolveModelPath("vde_base.obj"));
+	Mesh::loadObj(m_vdeGantry, resolveModelPath("vde_gantry.obj"));
+	Mesh::loadObj(m_vdePlatform, resolveModelPath("vde_platform.obj"));
+	Mesh::loadObj(m_legSleeve, resolveModelPath("leg_sleeve.obj"));
+	Mesh::loadObj(m_legPiston, resolveModelPath("leg_piston.obj"));
+	Mesh::loadObj(m_legJoint, resolveModelPath("leg_joint.obj"));
+	Mesh::loadObj(m_axisTriad, resolveModelPath("axis_triad.obj"));
 }
 
 void Painter::begin(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& cameraPos) {
@@ -396,14 +455,30 @@ void Painter::begin(const glm::mat4& view, const glm::mat4& proj, const glm::vec
 // Clears the depth buffer so coordinate-frame triads drawn afterwards stay visible in front of solid geometry.
 void Painter::overlayPass() { glClear(GL_DEPTH_BUFFER_BIT); }
 
-void Painter::draw(const Mesh& mesh, const glm::mat4& model, const glm::vec3& color) {
+const Mesh& Painter::meshFor(ModelId id) const {
+	switch (id) {
+	case ModelId::Chaser:      return m_chaser;
+	case ModelId::Target:      return m_target;
+	case ModelId::Earth:       return m_earth;
+	case ModelId::VdeBase:     return m_vdeBase;
+	case ModelId::VdeGantry:   return m_vdeGantry;
+	case ModelId::VdePlatform: return m_vdePlatform;
+	case ModelId::LegSleeve:   return m_legSleeve;
+	case ModelId::LegPiston:   return m_legPiston;
+	case ModelId::LegJoint:    return m_legJoint;
+	case ModelId::AxisTriad:   return m_axisTriad;
+	}
+	return m_chaser;
+}
+
+void Painter::draw(const Mesh& mesh, const glm::mat4& model, const glm::vec3& tint) {
 	m_shader.set("u_model", model);
-	m_shader.set("u_color", color);
+	m_shader.set("u_color", tint);
 	mesh.draw();
 }
-void Painter::box(const glm::mat4& model, const glm::vec3& color) { draw(m_box, model, color); }
-void Painter::box(const glm::vec3& center, const glm::vec3& size, const glm::vec3& color, const glm::mat4& parent) {
-	draw(m_box, glm::scale(glm::translate(parent, center), size), color);
+
+void Painter::drawModel(ModelId id, const glm::mat4& model, const glm::vec3& tint) {
+	draw(meshFor(id), model, tint);
 }
 
 // Constructs an orthonormal transform mapping the unit [0, 1] Z axis onto segment a -> b with XY scaled by `radius`.
@@ -418,31 +493,22 @@ glm::mat4 Painter::alongSegment(const glm::vec3& a, const glm::vec3& b, float ra
 	m[2] = glm::vec4(z * len, 0);    m[3] = glm::vec4(a, 1);
 	return m;
 }
-void Painter::cylinder(const glm::vec3& a, const glm::vec3& b, float radius, const glm::vec3& color) {
-	draw(m_cylinder, alongSegment(a, b, radius), color);
-}
-void Painter::cone(const glm::vec3& base, const glm::vec3& apex, float radius, const glm::vec3& color) {
-	draw(m_cone, alongSegment(base, apex, radius), color);
-}
-void Painter::sphere(const glm::vec3& center, float radius, const glm::vec3& color, int detail) {
-	draw(detail > 0 ? m_sphereFine : m_sphere, glm::scale(glm::translate(glm::mat4(1.0f), center), glm::vec3(radius)), color);
-}
-void Painter::label(const glm::vec3& world, std::string text, LabelKind kind, float side) {
-	m_labels.push_back({world, std::move(text), kind, side});
+
+void Painter::drawSegment(ModelId id, const glm::vec3& a, const glm::vec3& b, float radius, const glm::vec3& tint) {
+	draw(meshFor(id), alongSegment(a, b, radius), tint);
 }
 
-// Renders 3D RGB arrows along the columns of `frame` and queues a frame-name tag at its origin.
-void drawAxisTriad(Painter& painter, const glm::mat4& frame, float length, const char* name) {
-	static const glm::vec3 kAxisColors[3] = {{0.88f, 0.19f, 0.19f}, {0.18f, 0.63f, 0.26f}, {0.18f, 0.44f, 0.88f}};
-	const glm::vec3 origin(frame[3]);
-	for (int i = 0; i < 3; ++i) {
-		const glm::vec3 axis = glm::normalize(glm::vec3(frame[i]));
-		const glm::vec3 shaftEnd = origin + axis * (length * 0.78f);
-		painter.cylinder(origin, shaftEnd, length * 0.025f, kAxisColors[i]);
-		painter.cone(shaftEnd, origin + axis * length, length * 0.07f, kAxisColors[i]);
-	}
-	painter.sphere(origin, length * 0.045f, glm::vec3(0.25f));
-	if (name) painter.label(origin, name, LabelKind::Frame);
+void Painter::drawJoint(const glm::vec3& center, float radius) {
+	draw(m_legJoint, glm::scale(glm::translate(glm::mat4(1.0f), center), glm::vec3(radius)), glm::vec3(1.0f));
+}
+
+void Painter::drawTriad(const glm::mat4& frame, float length, const char* name) {
+	draw(m_axisTriad, glm::scale(frame, glm::vec3(length)), glm::vec3(1.0f));
+	if (name) label(glm::vec3(frame[3]), name, LabelKind::Frame);
+}
+
+void Painter::label(const glm::vec3& world, std::string text, LabelKind kind, float side) {
+	m_labels.push_back({world, std::move(text), kind, side});
 }
 
 // ============================================================================
@@ -459,18 +525,6 @@ glm::vec3 anchor(float radius, float angleDeg, float z) {
 	return {radius * std::cos(a), radius * std::sin(a), z};
 }
 
-// Draws a cylindrical docking collar with three angled alignment guide petals.
-void dockingMechanism(Painter& p, const glm::mat4& frame, float dir, const glm::vec3& color) {
-	auto at = [&](float x, float y, float z) { return glm::vec3(frame * glm::vec4(x, y, z * dir, 1)); };
-	p.cylinder(at(0, 0, 0), at(0, 0, 0.30f), 0.28f, color * 0.85f);
-	p.cylinder(at(0, 0, 0.30f), at(0, 0, 0.36f), 0.36f, color);
-	for (int i = 0; i < 3; ++i) {
-		const float a = glm::radians(120.0f * i + 30.0f);
-		p.cylinder(at(0.30f * std::cos(a), 0.30f * std::sin(a), 0.36f),
-				   at(0.16f * std::cos(a), 0.16f * std::sin(a), 0.56f), 0.035f, color * 1.1f);
-	}
-}
-
 // Builds a rigid-body 4x4 transform from position and ZYX Roll-Pitch-Yaw angles (radians).
 glm::mat4 attitude(const glm::vec3& pos, const Rpy& rpy) {
 	glm::mat4 m = glm::translate(glm::mat4(1.0f), pos);
@@ -478,32 +532,25 @@ glm::mat4 attitude(const glm::vec3& pos, const Rpy& rpy) {
 	m = glm::rotate(m, (float)rpy.pitch, {0, 1, 0});
 	return glm::rotate(m, (float)rpy.roll, {1, 0, 0});
 }
-
-// Draws symmetric port/starboard solar panel booms and wings attached to a spacecraft body frame.
-void solarWings(Painter& p, const glm::mat4& body, float halfWidth, float span) {
-	for (float side : {-1.0f, 1.0f}) {
-		p.box({0, side * (halfWidth + 0.25f), 0}, {0.08f, 0.5f, 0.08f}, {0.62f, 0.64f, 0.68f}, body);
-		p.box({0, side * (halfWidth + 0.5f + span * 0.5f), 0}, {span * 0.45f, span, 0.04f}, {0.16f, 0.24f, 0.45f}, body);
-	}
-}
 } // namespace
 
 OrbitCamera VdeScene::defaultCamera() const { return {{0.0f, 0.0f, 1.55f}, -62.0f, 16.0f, 7.4f, 40.0f}; }
 
-// Renders the floor, Stewart platform base (B_sp), 6 telescoping actuators, moving platform (P_sp)
-// driven by `snap.vde`, 4-post overhead gantry (O_sp), docking mechanisms, labels, and axis triads.
+// Renders the VDE testbed using dedicated .obj models: vde_base, vde_gantry, vde_platform
+// driven by `snap.vde`, 6 telescoping leg assemblies, labels, and axis triads.
 void VdeScene::render(Painter& p, const SimSnapshot& snap) {
 	const VdeState& s = snap.vde;
-	const glm::vec3 kSteel(0.55f, 0.57f, 0.60f), kDark(0.33f, 0.35f, 0.38f);
-
-	p.box({0, 0, -0.02f}, {4.2f, 4.2f, 0.04f}, {0.82f, 0.83f, 0.85f});
-	p.cylinder({0, 0, 0}, {0, 0, kBaseTop}, 1.0f, kDark);
 	const glm::mat4 bSp = glm::translate(glm::mat4(1.0f), {0, 0, kBaseTop});
+	const glm::mat4 oSp = glm::translate(glm::mat4(1.0f), {0, 0, kOverheadZ});
 
 	glm::mat4 pSp = glm::translate(bSp, glm::vec3(s.positionM.x, s.positionM.y, s.positionM.z) + glm::vec3(0, 0, kPlatformNominal));
 	pSp = glm::rotate(pSp, (float)s.orientationRad.yaw, {0, 0, 1});
 	pSp = glm::rotate(pSp, (float)s.orientationRad.pitch, {0, 1, 0});
 	pSp = glm::rotate(pSp, (float)s.orientationRad.roll, {1, 0, 0});
+
+	p.drawModel(ModelId::VdeBase);
+	p.drawModel(ModelId::VdeGantry);
+	p.drawModel(ModelId::VdePlatform, pSp);
 
 	for (int i = 0; i < 6; ++i) {
 		const int pair = i / 2;
@@ -511,24 +558,11 @@ void VdeScene::render(Painter& p, const SimSnapshot& snap) {
 		const glm::vec3 b = glm::vec3(bSp * glm::vec4(anchor(kBaseAnchorR, 120.0f * pair + side * 14.0f, 0.0f), 1));
 		const glm::vec3 t = glm::vec3(pSp * glm::vec4(anchor(kPlatAnchorR, 120.0f * pair + side * 46.0f, -0.06f), 1));
 		const glm::vec3 mid = b + (t - b) * 0.55f;
-		p.cylinder(b, mid, 0.050f, kDark);
-		p.cylinder(mid, t, 0.032f, kSteel);
-		p.sphere(b, 0.07f, kSteel);
-		p.sphere(t, 0.06f, kSteel);
+		p.drawSegment(ModelId::LegSleeve, b, mid, 0.050f);
+		p.drawSegment(ModelId::LegPiston, mid, t, 0.032f);
+		p.drawJoint(b, 0.07f);
+		p.drawJoint(t, 0.06f);
 	}
-
-	p.cylinder(glm::vec3(pSp * glm::vec4(0, 0, -0.08f, 1)), glm::vec3(pSp[3]), 0.66f, {0.62f, 0.70f, 0.80f});
-	dockingMechanism(p, pSp, 1.0f, {0.86f, 0.64f, 0.25f});
-
-	const float post = 1.75f, topZ = kOverheadZ + 0.35f;
-	for (float x : {-post, post})
-		for (float y : {-post, post}) p.box({x, y, topZ * 0.5f}, {0.12f, 0.12f, topZ}, kSteel);
-	for (float y : {-post, post}) p.box({0, y, topZ}, {2 * post + 0.12f, 0.12f, 0.12f}, kSteel);
-	p.box({0, 0, topZ}, {0.16f, 2 * post, 0.12f}, kSteel);
-	p.box({0, 0, kOverheadZ + 0.08f}, {1.6f, 1.6f, 0.16f}, {0.70f, 0.72f, 0.75f});
-	p.box({0, 0, (kOverheadZ + topZ) * 0.5f + 0.08f}, {0.2f, 0.2f, topZ - kOverheadZ - 0.1f}, kSteel);
-	glm::mat4 oSp = glm::translate(glm::mat4(1.0f), {0, 0, kOverheadZ});
-	dockingMechanism(p, oSp, -1.0f, {0.36f, 0.56f, 0.82f});
 
 	p.label({-0.9f, 0.0f, kBaseTop * 0.5f}, "Base (B_sp)", LabelKind::Object, -1.0f);
 	p.label(glm::vec3(pSp * glm::vec4(-0.6f, 0.0f, -0.04f, 1)), "Moving platform (P_sp)", LabelKind::Object, -1.0f);
@@ -537,34 +571,29 @@ void VdeScene::render(Painter& p, const SimSnapshot& snap) {
 	p.label({0.3f, 0.0f, kOverheadZ - 0.25f}, "Target docking mechanism", LabelKind::Object, 1.0f);
 
 	p.overlayPass();
-	drawAxisTriad(p, bSp, 0.6f, "B_sp");
-	drawAxisTriad(p, pSp, 0.6f, "P_sp");
-	drawAxisTriad(p, oSp, 0.6f, "O_sp");
+	p.drawTriad(bSp, 0.6f, "B_sp");
+	p.drawTriad(pSp, 0.6f, "P_sp");
+	p.drawTriad(oSp, 0.6f, "O_sp");
 }
 
 OrbitCamera SpacecraftScene::defaultCamera() const { return {{0.3f, 0.0f, -1.2f}, -76.0f, 10.0f, 12.5f, 40.0f}; }
 
-// Renders the curved Earth horizon sphere, Chaser and Target spacecraft buses, solar arrays,
-// docking adapters, object callouts, and body/docking coordinate frames (B_C, D_C, D_T, B_T).
+// Renders the Earth sphere, Chaser and Target spacecraft .obj models, labels, and body/docking triads.
 void SpacecraftScene::render(Painter& p, const SimSnapshot& snap) {
 	const SpacecraftBundle& sc = snap.spacecraft;
-	const glm::vec3 kMech(0.62f, 0.64f, 0.68f);
 
-	p.sphere({0, 0, -75.0f}, 70.0f, {0.20f, 0.42f, 0.75f}, 1);
+	p.drawModel(ModelId::Earth, glm::translate(glm::mat4(1.0f), {0, 0, -75.0f}));
 	p.label({-6.0f, -6.0f, -5.3f}, "Earth", LabelKind::Object, 1.0f);
 
 	// -------------------------------------------------------------------------
 	// 1. Spacecraft Attitude: Direct Telemetry from Dynamics Engine
 	// -------------------------------------------------------------------------
-	// Real 3-axis Euler roll, pitch, and yaw angles from simulation telemetry
 	const Rpy& chaserAtt = sc.chaser.eciOrientationRad;
 	const Rpy& targetAtt = sc.target.eciOrientationRad;
 
 	// -------------------------------------------------------------------------
 	// 2. Relative Position & Closing Distance: From 14-Element State Vector Y
 	// -------------------------------------------------------------------------
-	// snap.relative.pose.position represents r_rel = r_chaser - r_target in metres.
-	// In the docking corridor, the Chaser approaches along -X towards contact at 0.
 	const glm::vec3 targetSize(3.0f, 2.6f, 2.6f), chaserSize(2.0f, 1.7f, 1.7f);
 	const float mech = 0.45f;
 
@@ -577,42 +606,30 @@ void SpacecraftScene::render(Painter& p, const SimSnapshot& snap) {
 	const double relZ = snap.relative.pose.position.z;
 
 	if (std::abs(relX) > 1e-4 || std::abs(relY) > 1e-4 || std::abs(relZ) > 1e-4) {
-		// Telemetry active: exact physical relative separation and lateral misalignments
 		gap = (float)std::abs(relX);
 		offsetY = (float)relY;
 		offsetZ = (float)relZ;
 	} else if (snap.timeS <= 0.0) {
-		// Nominal idle visual separation before UDP packets arrive
 		gap = 1.2f;
 	}
 
-	// Target docking port tip is placed at origin X = 0.
-	// Chaser docking port tip is placed at X = -gap (plus lateral offsets Y and Z).
-	// When gap reaches 0.0 m, the two docking port tips touch exactly.
 	const glm::mat4 bT = attitude({targetSize.x * 0.5f + mech, 0.0f, 0.0f}, targetAtt);
 	const glm::mat4 bC = attitude({-(chaserSize.x * 0.5f + mech + gap), offsetY, offsetZ}, chaserAtt);
 
-	p.box({0, 0, 0}, targetSize, {0.86f, 0.87f, 0.89f}, bT);
-	p.box({0, 0, 0}, chaserSize, {0.85f, 0.70f, 0.38f}, bC);
-	solarWings(p, bT, targetSize.y * 0.5f, 3.2f);
-	solarWings(p, bC, chaserSize.y * 0.5f, 2.0f);
+	p.drawModel(ModelId::Target, bT);
+	p.drawModel(ModelId::Chaser, bC);
 
 	const glm::mat4 dC = glm::translate(bC, {chaserSize.x * 0.5f + mech, 0, 0});
 	const glm::mat4 dT = glm::rotate(glm::translate(bT, {-(targetSize.x * 0.5f + mech), 0, 0}), glm::radians(180.0f), {0, 0, 1});
-	for (const glm::mat4* d : {&dC, &dT}) {
-		const glm::vec3 tip(*d * glm::vec4(0, 0, 0, 1)), root(*d * glm::vec4(-mech, 0, 0, 1)), lip(*d * glm::vec4(-0.08f, 0, 0, 1));
-		p.cylinder(root, tip, 0.38f, kMech);
-		p.cylinder(lip, tip, 0.48f, kMech * 1.15f);
-	}
 
 	p.label(glm::vec3(bC * glm::vec4(0, 0, -chaserSize.z * 0.5f - 0.35f, 1)), "CHASER", LabelKind::Object, -1.0f);
 	p.label(glm::vec3(bT * glm::vec4(0, 0, -targetSize.z * 0.5f - 0.35f, 1)), "TARGET", LabelKind::Object, 1.0f);
 
 	p.overlayPass();
-	drawAxisTriad(p, bC, 0.9f, "B_C");
-	drawAxisTriad(p, dC, 0.7f, "D_C");
-	drawAxisTriad(p, dT, 0.7f, "D_T");
-	drawAxisTriad(p, bT, 0.9f, "B_T");
+	p.drawTriad(bC, 0.9f, "B_C");
+	p.drawTriad(dC, 0.7f, "D_C");
+	p.drawTriad(dT, 0.7f, "D_T");
+	p.drawTriad(bT, 0.9f, "B_T");
 }
 
 } // namespace vde::render
