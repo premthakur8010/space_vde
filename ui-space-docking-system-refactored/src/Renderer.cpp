@@ -1,7 +1,7 @@
 // =============================================================================
 // src/Renderer.cpp
 // Implements the OpenGL 4.5 3D rendering classes: two-light GLSL 450 shader,
-// Direct State Access (DSA) 4x MSAA Framebuffer, procedural Mesh builders,
+// Direct State Access (DSA) 4x MSAA Framebuffer, Wavefront OBJ Mesh loader,
 // OrbitCamera math, immediate-mode Painter, RGB coordinate triads, VdeScene
 // (hexapod + overhead gantry), and SpacecraftScene (orbital Chaser & Target).
 // =============================================================================
@@ -13,18 +13,38 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <numbers>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <system_error>
 
 namespace vde::render {
 
 namespace {
 constexpr GLsizei kSamples          = 4;
-constexpr float   kPi               = std::numbers::pi_v<float>;
 constexpr float   kRotateDegPerPx   = 0.3f;
 constexpr float   kMaxPitchDeg      = 89.0f;
 constexpr float   kZoomPerWheelStep = 0.88f;
 constexpr float   kMinDistanceM     = 0.5f;
 constexpr float   kMaxDistanceM     = 400.0f;
+
+// Resolves a Wavefront .obj asset path next to the executable first, then source/repo locations.
+std::string resolveModelPath(const char* file) {
+	namespace fs = std::filesystem;
+	std::error_code ec;
+	const std::string candidates[] = {
+		vde::executableDir() + "/models/" + file,
+		std::string("assets/models/") + file,
+		std::string("ui-space-docking-system-refactored/assets/models/") + file,
+#ifdef VDE_MODEL_DIR
+		std::string(VDE_MODEL_DIR) + "/" + file,
+#endif
+	};
+	for (const std::string& path : candidates) {
+		if (fs::is_regular_file(path, ec)) return path;
+	}
+	return std::string("assets/models/") + file;
+}
 
 // Compiles a single GLSL shader stage and prints driver diagnostics on syntax/compile errors.
 GLuint compileShader(GLenum type, const char* src) {
@@ -189,70 +209,140 @@ void Mesh::upload(const std::vector<float>& data) {
 }
 
 void Mesh::draw() const {
+	if (!m_vao || m_count <= 0) return;
 	glBindVertexArray(m_vao);
 	glDrawArrays(GL_TRIANGLES, 0, m_count);
 	glBindVertexArray(0);
 }
 
-// Builds a unit cube centred at the origin spanning [-0.5, +0.5] along each axis.
-void Mesh::makeBox(Mesh& m) {
-	std::vector<float> v;
-	const glm::vec3 normals[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
-	for (const glm::vec3& n : normals) {
-		const glm::vec3 a = std::abs(n.z) > 0.5f ? glm::vec3(1, 0, 0) : glm::vec3(0, 0, 1);
-		const glm::vec3 b = glm::cross(n, a), c = n * 0.5f;
-		const glm::vec3 p0 = c - a * 0.5f - b * 0.5f, p1 = c + a * 0.5f - b * 0.5f;
-		const glm::vec3 p2 = c + a * 0.5f + b * 0.5f, p3 = c - a * 0.5f + b * 0.5f;
-		pushVertex(v, p0, n); pushVertex(v, p1, n); pushVertex(v, p2, n);
-		pushVertex(v, p0, n); pushVertex(v, p2, n); pushVertex(v, p3, n);
+// Parses a Wavefront .obj file (v, vn, vt, f with triangle/polygon fan triangulation) and uploads to GPU.
+bool Mesh::loadObj(Mesh& m, const std::string& path) {
+	std::ifstream file(path, std::ios::binary | std::ios::ate);
+	if (!file.is_open()) {
+		std::fprintf(stderr, "[OBJ] Failed to open model file: %s\n", path.c_str());
+		return false;
 	}
-	m.upload(v);
-}
-
-// Builds a capped unit cylinder of radius 1 along Z in [0, 1].
-void Mesh::makeCylinder(Mesh& m, int seg) {
-	std::vector<float> v;
-	for (int i = 0; i < seg; ++i) {
-		const float a0 = 2 * kPi * i / seg, a1 = 2 * kPi * (i + 1) / seg;
-		const glm::vec3 d0(std::cos(a0), std::sin(a0), 0), d1(std::cos(a1), std::sin(a1), 0), up(0, 0, 1);
-		pushVertex(v, d0, d0); pushVertex(v, d1, d1); pushVertex(v, d1 + up, d1);
-		pushVertex(v, d0, d0); pushVertex(v, d1 + up, d1); pushVertex(v, d0 + up, d0);
-		pushVertex(v, up, up); pushVertex(v, d0 + up, up); pushVertex(v, d1 + up, up);
-		pushVertex(v, glm::vec3(0), -up); pushVertex(v, d1, -up); pushVertex(v, d0, -up);
+	const std::streamsize size = file.tellg();
+	if (size <= 0) {
+		std::fprintf(stderr, "[OBJ] Empty model file: %s\n", path.c_str());
+		return false;
 	}
-	m.upload(v);
-}
-
-// Builds a capped unit cone with base radius 1 at z = 0 and apex at z = 1.
-void Mesh::makeCone(Mesh& m, int seg) {
-	std::vector<float> v;
-	const glm::vec3 apex(0, 0, 1);
-	for (int i = 0; i < seg; ++i) {
-		const float a0 = 2 * kPi * i / seg, a1 = 2 * kPi * (i + 1) / seg;
-		const glm::vec3 d0(std::cos(a0), std::sin(a0), 0), d1(std::cos(a1), std::sin(a1), 0);
-		const glm::vec3 n0 = glm::normalize(d0 + apex), n1 = glm::normalize(d1 + apex);
-		pushVertex(v, d0, n0); pushVertex(v, d1, n1); pushVertex(v, apex, glm::normalize(n0 + n1));
-		pushVertex(v, glm::vec3(0), {0, 0, -1}); pushVertex(v, d1, {0, 0, -1}); pushVertex(v, d0, {0, 0, -1});
+	std::string content(static_cast<size_t>(size), '\0');
+	file.seekg(0);
+	if (!file.read(content.data(), size)) {
+		std::fprintf(stderr, "[OBJ] Failed to read model file: %s\n", path.c_str());
+		return false;
 	}
-	m.upload(v);
-}
 
-// Builds a UV sphere of radius 1 centred at the origin.
-void Mesh::makeSphere(Mesh& m, int stacks, int slices) {
-	std::vector<float> v;
-	auto at = [](float theta, float phi) {
-		return glm::vec3(std::sin(theta) * std::cos(phi), std::sin(theta) * std::sin(phi), std::cos(theta));
+	std::vector<glm::vec3> positions;
+	std::vector<glm::vec3> normals;
+	std::vector<float>     vertices;
+
+	struct FaceCorner {
+		int vIdx  = -1;
+		int vnIdx = -1;
 	};
-	for (int i = 0; i < stacks; ++i) {
-		const float t0 = kPi * i / stacks, t1 = kPi * (i + 1) / stacks;
-		for (int j = 0; j < slices; ++j) {
-			const float p0 = 2 * kPi * j / slices, p1 = 2 * kPi * (j + 1) / slices;
-			const glm::vec3 a = at(t0, p0), b = at(t1, p0), c = at(t1, p1), d = at(t0, p1);
-			pushVertex(v, a, a); pushVertex(v, b, b); pushVertex(v, c, c);
-			pushVertex(v, a, a); pushVertex(v, c, c); pushVertex(v, d, d);
+	std::vector<FaceCorner> poly;
+
+	auto resolveIndex = [](int raw, int count) -> int {
+		if (raw > 0) return raw - 1;
+		if (raw < 0) return count + raw;
+		return -1;
+	};
+
+	const char* cur = content.data();
+	const char* end = cur + content.size();
+
+	while (cur < end) {
+		while (cur < end && (*cur == ' ' || *cur == '\t' || *cur == '\r' || *cur == '\n')) ++cur;
+		if (cur >= end) break;
+
+		const char* lineEnd = cur;
+		while (lineEnd < end && *lineEnd != '\n' && *lineEnd != '\r') ++lineEnd;
+
+		if (cur[0] == 'v' && (cur + 1 < lineEnd) && (cur[1] == ' ' || cur[1] == '\t')) {
+			const char* p    = cur + 2;
+			char*       next = nullptr;
+			const float x    = std::strtof(p, &next); p = next;
+			const float y    = std::strtof(p, &next); p = next;
+			const float z    = std::strtof(p, &next);
+			positions.emplace_back(x, y, z);
+		} else if (cur[0] == 'v' && (cur + 2 < lineEnd) && cur[1] == 'n' && (cur[2] == ' ' || cur[2] == '\t')) {
+			const char* p    = cur + 3;
+			char*       next = nullptr;
+			const float nx   = std::strtof(p, &next); p = next;
+			const float ny   = std::strtof(p, &next); p = next;
+			const float nz   = std::strtof(p, &next);
+			normals.emplace_back(nx, ny, nz);
+		} else if (cur[0] == 'f' && (cur + 1 < lineEnd) && (cur[1] == ' ' || cur[1] == '\t')) {
+			poly.clear();
+			const char* p = cur + 2;
+			while (p < lineEnd) {
+				while (p < lineEnd && (*p == ' ' || *p == '\t')) ++p;
+				if (p >= lineEnd) break;
+
+				char*      next = nullptr;
+				const long vRaw = std::strtol(p, &next, 10);
+				if (next == p) break;
+				p = next;
+
+				long vnRaw = 0;
+				if (p < lineEnd && *p == '/') {
+					++p;
+					if (p < lineEnd && *p != '/') {
+						std::strtol(p, &next, 10);
+						p = next;
+					}
+					if (p < lineEnd && *p == '/') {
+						++p;
+						vnRaw = std::strtol(p, &next, 10);
+						p = next;
+					}
+				}
+
+				const int vIdx  = resolveIndex(static_cast<int>(vRaw), static_cast<int>(positions.size()));
+				const int vnIdx = resolveIndex(static_cast<int>(vnRaw), static_cast<int>(normals.size()));
+				if (vIdx >= 0 && vIdx < static_cast<int>(positions.size())) {
+					poly.push_back({vIdx, vnIdx});
+				}
+				while (p < lineEnd && *p != ' ' && *p != '\t') ++p;
+			}
+
+			for (size_t i = 2; i < poly.size(); ++i) {
+				const FaceCorner c[3] = {poly[0], poly[i - 1], poly[i]};
+				const glm::vec3  p0   = positions[c[0].vIdx];
+				const glm::vec3  p1   = positions[c[1].vIdx];
+				const glm::vec3  p2   = positions[c[2].vIdx];
+
+				glm::vec3 faceN(0.0f, 0.0f, 1.0f);
+				const bool hasNormals =
+					(c[0].vnIdx >= 0 && c[0].vnIdx < static_cast<int>(normals.size())) &&
+					(c[1].vnIdx >= 0 && c[1].vnIdx < static_cast<int>(normals.size())) &&
+					(c[2].vnIdx >= 0 && c[2].vnIdx < static_cast<int>(normals.size()));
+
+				if (!hasNormals) {
+					const glm::vec3 cr = glm::cross(p1 - p0, p2 - p0);
+					const float     ln = glm::length(cr);
+					if (ln > 1e-8f) faceN = cr / ln;
+				}
+
+				for (int k = 0; k < 3; ++k) {
+					const glm::vec3 pos = positions[c[k].vIdx];
+					const glm::vec3 nrm = hasNormals ? normals[c[k].vnIdx] : faceN;
+					pushVertex(vertices, pos, nrm);
+				}
+			}
 		}
+
+		cur = lineEnd;
 	}
-	m.upload(v);
+
+	if (vertices.empty()) {
+		std::fprintf(stderr, "[OBJ] No geometry loaded from model file: %s\n", path.c_str());
+		return false;
+	}
+	m.upload(vertices);
+	return true;
 }
 
 // ============================================================================
@@ -281,14 +371,14 @@ void OrbitCamera::zoom(float wheelSteps) {
 	distance = std::clamp(distance * std::pow(kZoomPerWheelStep, wheelSteps), kMinDistanceM, kMaxDistanceM);
 }
 
-// Compiles the lighting shader and uploads shared unit meshes once per SceneView.
+// Compiles the lighting shader and loads shared unit .obj meshes once per SceneView.
 Painter::Painter() {
 	m_shader.build(kVertex, kFragment);
-	Mesh::makeBox(m_box);
-	Mesh::makeCylinder(m_cylinder, 32);
-	Mesh::makeCone(m_cone, 24);
-	Mesh::makeSphere(m_sphere, 16, 24);
-	Mesh::makeSphere(m_sphereFine, 96, 192);
+	Mesh::loadObj(m_box, resolveModelPath("box.obj"));
+	Mesh::loadObj(m_cylinder, resolveModelPath("cylinder.obj"));
+	Mesh::loadObj(m_cone, resolveModelPath("cone.obj"));
+	Mesh::loadObj(m_sphere, resolveModelPath("sphere.obj"));
+	Mesh::loadObj(m_sphereFine, resolveModelPath("sphere_fine.obj"));
 }
 
 void Painter::begin(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& cameraPos) {

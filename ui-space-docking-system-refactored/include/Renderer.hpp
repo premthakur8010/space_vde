@@ -1,7 +1,7 @@
 // =============================================================================
 // include/Renderer.hpp
 // Declares the OpenGL 4.5 3D rendering subsystem: GLSL Shader wrapper, 4x MSAA
-// off-screen Framebuffer, procedural triangle Mesh generator, interactive Z-up
+// off-screen Framebuffer, Wavefront OBJ Mesh loader, interactive Z-up
 // OrbitCamera, immediate-mode 3D Painter, coordinate-axis triad helper, and the
 // VdeScene and SpacecraftScene 3D visualizers.
 // =============================================================================
@@ -60,7 +60,7 @@ private:
 };
 
 // Owns an OpenGL Vertex Array Object (VAO) and interleaved position+normal Vertex Buffer Object (VBO),
-// plus procedural geometry builders for unit primitives (box, cylinder, cone, sphere).
+// loaded from Wavefront .obj files for unit geometry primitives.
 class Mesh {
 public:
 	Mesh() = default;
@@ -71,10 +71,7 @@ public:
 	void upload(const std::vector<float>& posNormal);
 	void draw() const;
 
-	static void makeBox(Mesh& m);
-	static void makeCylinder(Mesh& m, int segments);
-	static void makeCone(Mesh& m, int segments);
-	static void makeSphere(Mesh& m, int stacks, int slices);
+	static bool loadObj(Mesh& m, const std::string& path);
 
 private:
 	GLuint  m_vao = 0, m_vbo = 0;
