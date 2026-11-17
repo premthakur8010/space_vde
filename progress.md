@@ -65,3 +65,35 @@ This file tracks all modifications, architectural updates, and feature additions
   5. `RELOAD_XML` command hot-reloads file and resets to initial conditions at $T = 0.0\text{ s}$.
 
 ---
+
+## [2026-11-17] - Tamper-Proof Factory Defaults (`default.xml` Auto-Regeneration)
+
+### 1. Problem Statement & Motivation
+* `config/default.xml` serves as the factory-default configuration reference when reverting edited XML settings.
+* Because it exists as a plain file on disk, a user could directly edit or delete `default.xml`, corrupting the known-good baseline.
+* To make `default.xml` tamper-proof, the canonical default configuration must live compiled inside C++ code so any modification or deletion on disk is automatically detected and overwritten.
+
+### 2. Compiled-In Factory Defaults Header (`space_vde/include/space_docking/dynamics_engine/DefaultConfig.hpp`)
+* Created `DefaultConfig.hpp` containing:
+  * `kDefaultConfigXml`: The single-source-of-truth factory XML configuration embedded as a `constexpr std::string_view` raw string literal in the compiled binary.
+  * `ensureDefaultConfigFile(path)` / `ensureDefaultConfigNextTo(simConfigPath)`:
+    * Reads `default.xml` from disk and compares it against `kDefaultConfigXml` (normalizing CRLF/LF line endings).
+    * If `default.xml` is missing or its contents differ from `kDefaultConfigXml`, automatically rewrites `default.xml` from the compiled-in C++ template (restoring write permissions first if needed) and prints a `[DEFAULT CONFIG WARNING]` alert to the console/log.
+    * Returns `DefaultFileStatus` (`Intact`, `RestoredMissing`, `RestoredTampered`, or `WriteFailed`).
+
+### 3. Automatic Enforcement in Physics Engine & UI
+* **Dynamics Engine (`dynamics_engine_main.cpp`)**:
+  * Calls `ensureDefaultConfigNextTo(configPath)` automatically on startup and whenever a `ReloadXml` command is received.
+  * Logs a warning via `SD_LOG_WARN` whenever tampering is detected and restored.
+* **UI Visualizer (`src/main.cpp` & `src/UiWindows.cpp`)**:
+  * Calls `ensureDefaultConfigNextTo(resolvedConfig)` on UI startup and whenever the **`EDIT XML`** dialog is opened.
+  * **`REVERT TO DEFAULT` Button**: Directly populates all input boxes from the compiled-in `kDefaultConfigXml` constant in C++ memory (so even mid-session disk tampering cannot affect the revert) while simultaneously verifying/restoring `default.xml` on disk and displaying a warning banner in the UI if tampering was repaired.
+
+### 4. Unit & Integration Verification (`tests/unit/TestDynamicsEngineBase.cpp`)
+* Added automated unit tests verifying all three states of `ensureDefaultConfigFile`:
+  1. Missing file $\rightarrow$ `RestoredMissing` and valid XML generated.
+  2. Unmodified file $\rightarrow$ `Intact`.
+  3. Tampered file $\rightarrow$ `RestoredTampered` and original factory values (`Chaser = 50 kg`, `Target = 100 kg`) restored.
+* Verified all 4 CTest suites pass 100%.
+
+---

@@ -10,6 +10,7 @@
 #include "UiWindows.hpp"
 
 #include "UiCore.hpp"
+#include "space_docking/dynamics_engine/DefaultConfig.hpp"
 #include "space_docking/dynamics_engine/XmlConfigUtils.hpp"
 #include "space_docking/dynamics_engine/XmlTags.hpp"
 
@@ -153,6 +154,7 @@ class ConfigXmlDialog {
 public:
 	void open(const AppState& app) {
 		m_configFilePath = vde::resolveConfigPath("simulation_config.xml");
+		space_docking::dynamics::default_config::ensureDefaultConfigNextTo(m_configFilePath);
 		m_defaultFilePath = vde::resolveConfigPath("default.xml");
 		loadFromXmlFile(m_configFilePath, app);
 		m_title = "Edit XML Configuration (" + m_configFilePath + ")###ConfigXmlDialog";
@@ -327,9 +329,13 @@ public:
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("REVERT TO DEFAULT", ImVec2(reloadW, 0))) {
-			loadFromDefaultXmlFile(app);
-			m_statusMessage = "Reverted all boxes to default values from default.xml.";
-			m_statusTimer = 3.5f;
+			const auto status = loadFromDefaultXmlFile(app);
+			if (status == space_docking::dynamics::default_config::DefaultFileStatus::RestoredTampered) {
+				m_statusMessage = "Warning: default.xml was tampered with! Restored default.xml and reverted all boxes to built-in factory defaults.";
+			} else {
+				m_statusMessage = "Reverted all boxes to built-in factory defaults (and verified default.xml on disk).";
+			}
+			m_statusTimer = 4.0f;
 		}
 		ImGui::SameLine();
 		if (primaryButton("CLOSE", ImVec2(closeW, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
@@ -401,17 +407,12 @@ private:
 	NetworkFields  m_network;
 	LoggingFields  m_logging;
 
-	void loadFromDefaultXmlFile(const AppState& app) {
+	space_docking::dynamics::default_config::DefaultFileStatus loadFromDefaultXmlFile(const AppState&) {
+		const auto status = space_docking::dynamics::default_config::ensureDefaultConfigNextTo(m_configFilePath);
 		m_defaultFilePath = vde::resolveConfigPath("default.xml");
-		std::ifstream file(m_defaultFilePath);
-		if (file.is_open()) {
-			std::stringstream ss;
-			ss << file.rdbuf();
-			m_rawXml = ss.str();
-			parseXmlToFields(m_rawXml);
-		} else {
-			loadFromXmlFile(m_configFilePath, app);
-		}
+		m_rawXml = std::string(space_docking::dynamics::default_config::kDefaultConfigXml);
+		parseXmlToFields(m_rawXml);
+		return status;
 	}
 
 	static void copyField(char* dest, size_t destSize, const std::string& src) {

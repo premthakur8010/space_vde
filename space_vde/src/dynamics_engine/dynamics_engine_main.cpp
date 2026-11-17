@@ -20,6 +20,7 @@
  *    - Busy-spins for the final sub-millisecond tail to eliminate scheduler jitter and guarantee exact 1000 Hz.
  */
 
+#include "space_docking/dynamics_engine/DefaultConfig.hpp"
 #include "space_docking/dynamics_engine/DynamicsEngine.hpp"
 #include "space_docking/dynamics_engine/XmlConfigLoader.hpp"
 #include "space_docking/dynamics_engine/XmlConfigUtils.hpp"
@@ -110,6 +111,17 @@ int main(int argc, char** argv)
 		{
 			configPath = argv[i];
 		}
+	}
+
+	// 0. Verify & enforce tamper-proof factory default.xml from compiled-in C++ template
+	const auto defaultStatus = space_docking::dynamics::default_config::ensureDefaultConfigNextTo(configPath);
+	if (defaultStatus == space_docking::dynamics::default_config::DefaultFileStatus::RestoredTampered)
+	{
+		SD_LOG_WARN("default.xml tampering detected on startup; restored from compiled-in factory defaults");
+	}
+	else if (defaultStatus == space_docking::dynamics::default_config::DefaultFileStatus::RestoredMissing)
+	{
+		SD_LOG_INFO("default.xml was missing on disk; regenerated from compiled-in factory defaults");
 	}
 
 	// 1. Load XML configuration file (seed fallback network defaults before parsing <network>)
@@ -272,6 +284,12 @@ int main(int argc, char** argv)
 				{
 					isSimRunning = false;
 					stepCount = 0;
+					if (space_docking::dynamics::default_config::ensureDefaultConfigNextTo(configPath) ==
+					    space_docking::dynamics::default_config::DefaultFileStatus::RestoredTampered)
+					{
+						SD_LOG_WARN("default.xml tampering detected during ReloadXml; restored from compiled-in factory defaults");
+					}
+
 					space_docking::dynamics::RunConfig reloadedConfig{};
 					reloadedConfig.targetHost = space_docking::network::vde_net::kDefaultHost;
 					reloadedConfig.configPort = space_docking::network::vde_net::kDefaultConfigPort;

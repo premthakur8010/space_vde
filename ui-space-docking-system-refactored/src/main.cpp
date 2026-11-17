@@ -10,6 +10,7 @@
 #include "Client.hpp"
 #include "UiCore.hpp"
 #include "UiWindows.hpp"
+#include "space_docking/dynamics_engine/DefaultConfig.hpp"
 #include "space_docking/dynamics_engine/XmlConfigUtils.hpp"
 
 #include <glad/gl.h>  // must precede GLFW
@@ -72,6 +73,8 @@ CliOptions resolveNetworkOptions(int argc, char** argv) {
 	}
 
 	const std::string resolvedConfig = vde::resolveConfigPath("simulation_config.xml", configPath);
+	space_docking::dynamics::default_config::ensureDefaultConfigNextTo(resolvedConfig);
+
 	std::string unusedTargetHost = opt.host;
 	space_docking::dynamics::xml_utils::loadNetworkEndpointsFromFile(
 	    resolvedConfig, unusedTargetHost, opt.configPort, opt.statePort);

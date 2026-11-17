@@ -1,3 +1,4 @@
+#include "space_docking/dynamics_engine/DefaultConfig.hpp"
 #include "space_docking/dynamics_engine/DynamicsEngine.hpp"
 #include "space_docking/dynamics_engine/RelativeKinematics.hpp"
 #include "space_docking/dynamics_engine/SpacecraftDynamics.hpp"
@@ -148,6 +149,26 @@ int main()
 	REQUIRE(netFileConfig.statePort == 7102);
 	REQUIRE(xml_utils::resolveConfigFilePath("simulation_config.xml", tempXmlPath) == tempXmlPath);
 	std::remove(tempXmlPath.c_str());
+
+	// 8. Test tamper-proof default.xml regeneration (missing -> created, intact -> untouched, tampered -> restored)
+	const std::filesystem::path testDefaultPath = "test_tamper_default.xml";
+	std::filesystem::remove(testDefaultPath);
+	REQUIRE(default_config::ensureDefaultConfigFile(testDefaultPath, true) == default_config::DefaultFileStatus::RestoredMissing);
+	REQUIRE(default_config::ensureDefaultConfigFile(testDefaultPath, true) == default_config::DefaultFileStatus::Intact);
+	{
+		std::ofstream tamperOut(testDefaultPath, std::ios::trunc);
+		tamperOut << "<simulationconfig><chaser><masskg>99999.0</masskg></chaser></simulationconfig>\n";
+	}
+	REQUIRE(default_config::ensureDefaultConfigFile(testDefaultPath, true) == default_config::DefaultFileStatus::RestoredTampered);
+	REQUIRE(default_config::ensureDefaultConfigFile(testDefaultPath, true) == default_config::DefaultFileStatus::Intact);
+	RunConfig restoredCfg{};
+	REQUIRE(XmlConfigLoader::loadRunConfig(testDefaultPath.string(), restoredCfg) == ErrorCode::OK);
+	REQUIRE(restoredCfg.chaserMass == 50.0);
+	REQUIRE(restoredCfg.targetMass == 100.0);
+	std::filesystem::remove(testDefaultPath);
+
+	// Also ensure the real default.xml is verified intact
+	REQUIRE(default_config::ensureDefaultConfigNextTo(configPath, true) == default_config::DefaultFileStatus::Intact);
 
 	std::cout << "[PASS] TestDynamicsEngineBase completed successfully.\n";
 	return 0;
