@@ -317,26 +317,50 @@ ToolbarAction drawToolbar(AppState& app, const ToolbarOptions& opt) {
 	ToolbarAction action = ToolbarAction::None;
 	ImGui::Dummy(ImVec2(0, 2));
 
+	if (!opt.replayMode) {
+		const bool isRunning = app.isSimRunning();
+		if (isRunning) {
+			if (toolbarButton("PAUSE SIM", true, color::kOrange)) {
+				app.pauseSimulation();
+			}
+		} else {
+			if (toolbarButton("START SIM", true, color::kAxisY)) {
+				app.startSimulation();
+			}
+		}
+		ImGui::SameLine();
+		if (toolbarButton("RESET (T=0)")) {
+			app.resetSimulation();
+		}
+		ImGui::SameLine();
+		if (toolbarButton("RELOAD XML")) {
+			app.reloadXmlSimulation();
+		}
+		ImGui::SameLine();
+	}
+
+	if (opt.showConfig)   { if (toolbarButton("EDIT XML")) action = ToolbarAction::InitialConfig; ImGui::SameLine(); }
+	if (opt.showReplay)   { if (toolbarButton("REPLAY")) action = ToolbarAction::Replay; ImGui::SameLine(); }
+	if (opt.showAnalysis) { if (toolbarButton("OPEN ANALYSIS")) action = ToolbarAction::OpenAnalysis; ImGui::SameLine(); }
+	if (toolbarButton("EXPORT DATA")) app.submit(ExportDataCmd{opt.exportPrefix});
+	ImGui::SameLine();
 	const bool recording = app.isRecording(opt.view);
 	if (toolbarButton(recording ? "STOP RECORDING" : "RECORD VIDEO", recording, color::kRecordRed))
 		app.submit(ToggleRecordingCmd{opt.view, opt.recordTag});
-	ImGui::SameLine();
-	if (toolbarButton("EXPORT DATA")) app.submit(ExportDataCmd{opt.exportPrefix});
-	if (opt.showAnalysis) { ImGui::SameLine(); if (toolbarButton("OPEN ANALYSIS")) action = ToolbarAction::OpenAnalysis; }
-	if (opt.showReplay)   { ImGui::SameLine(); if (toolbarButton("REPLAY")) action = ToolbarAction::Replay; }
-	if (opt.showConfig)   { ImGui::SameLine(); if (toolbarButton("EDIT XML")) action = ToolbarAction::InitialConfig; }
 	const float rowY = ImGui::GetItemRectMin().y, rowH = ImGui::GetItemRectSize().y;
 
 	char clock[64];
 	std::snprintf(clock, sizeof(clock), "T+ %s · %.0f Hz", formatSimTime(opt.timeS).c_str(), kUiRateHz);
-	const char* status = opt.replayMode ? "REPLAY MODE" : (app.clientStats().hasState ? "Status: LIVE" : "Status: WAITING FOR ENGINE");
+	const char* status = opt.replayMode ? "REPLAY MODE"
+	                     : (!app.clientStats().hasState ? "Status: WAITING FOR ENGINE"
+	                     : (app.isSimRunning() ? "Status: LIVE (RUNNING)" : "Status: READY (PAUSED)"));
 	const ImGuiStyle& st = ImGui::GetStyle();
 
 	ImGui::PushFont(g_fonts.mono, 0.0f);
 	const float clockW = ImGui::CalcTextSize(clock).x;
 	ImGui::PopFont();
 	const float recW = recording ? ImGui::CalcTextSize("REC").x + st.FramePadding.x * 2 + st.ItemSpacing.x * 2 : 0.0f;
-	const float statusW = ImGui::CalcTextSize(status).x + (opt.replayMode ? st.FramePadding.x * 2 : 0.0f);
+	const float statusW = ImGui::CalcTextSize(status).x + (opt.replayMode || app.clientStats().hasState ? st.FramePadding.x * 2 : 0.0f);
 
 	ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - (clockW + recW + st.ItemSpacing.x * 3 + statusW));
 	const float textY = rowY + (rowH - ImGui::GetTextLineHeight()) * 0.5f;
@@ -353,9 +377,15 @@ ToolbarAction drawToolbar(AppState& app, const ToolbarOptions& opt) {
 	if (opt.replayMode) {
 		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, textY - st.FramePadding.y * 0.5f));
 		statusTag(status, color::kOrange);
-	} else {
+	} else if (!app.clientStats().hasState) {
 		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, textY));
 		ImGui::TextUnformatted(status);
+	} else if (app.isSimRunning()) {
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, textY - st.FramePadding.y * 0.5f));
+		statusTag(status, color::kAxisY);
+	} else {
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, textY - st.FramePadding.y * 0.5f));
+		statusTag(status, color::kOrange);
 	}
 	ImGui::SetCursorScreenPos(ImVec2(ImGui::GetWindowPos().x + st.WindowPadding.x, rowY + rowH + st.ItemSpacing.y));
 	ImGui::Dummy(ImVec2(0, 0));

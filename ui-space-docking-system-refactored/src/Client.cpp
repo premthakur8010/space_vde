@@ -141,6 +141,7 @@ std::uintptr_t openUdpNonBlocking() {
 SimSnapshot unpackState(const net::StatePacket& p) {
 	SimSnapshot s;
 	s.timeS                         = p.timeS;
+	s.isSimRunning                  = (p.simRunState != 0);
 	s.relative                      = p.relative;
 	s.vde                           = p.vde;
 	s.spacecraft.chaser             = p.chaser;
@@ -187,7 +188,7 @@ ErrorCode VisualizationClient::connect(const std::string& host, std::uint16_t co
 }
 
 // Packs RunConfig fields into a fixed-size RunConfigPacket and sends it to <m_host>:<m_configPort>.
-ErrorCode VisualizationClient::sendRunConfig(const RunConfig& cfg) {
+ErrorCode VisualizationClient::sendRunConfig(const RunConfig& cfg, net::SimCommand cmd) {
 	if (m_txHandle == kBadSocket) return ErrorCode::SocketError;
 	net::RunConfigPacket p;
 	p.chaserMassKg   = cfg.chaserMassKg;
@@ -199,6 +200,7 @@ ErrorCode VisualizationClient::sendRunConfig(const RunConfig& cfg) {
 	p.alongTrackSepM = cfg.alongTrackSepM;
 	p.frameMapping   = (std::int32_t)cfg.frameMapping;
 	p.disturbancesOn = cfg.disturbancesOn ? 1u : 0u;
+	p.simCommand     = static_cast<std::uint8_t>(cmd);
 	std::snprintf(p.ngcMode, sizeof(p.ngcMode), "%s", cfg.ngcMode.c_str());
 
 	const sockaddr_in dst = makeAddr(m_host.c_str(), m_configPort);
@@ -220,7 +222,8 @@ bool VisualizationClient::getLatestState(SimSnapshot& out) {
 			::recvfrom(toNative(m_rxHandle), reinterpret_cast<char*>(&pkt), static_cast<int>(sizeof(pkt)), 0, nullptr, nullptr));
 		if (n <= 0) break;
 		if (n == static_cast<long long>(sizeof(pkt)) && pkt.magic == net::kProtocolMagic && pkt.version == net::kProtocolVersion) {
-			if (!m_hasState || pkt.sequence >= m_lastSequence) {
+			const bool isReset = (pkt.sequence < m_lastSequence && (pkt.sequence == 0 || pkt.timeS < m_latest.timeS));
+			if (!m_hasState || pkt.sequence >= m_lastSequence || isReset) {
 				newest         = pkt;
 				m_lastSequence = pkt.sequence;
 				gotNew         = true;
@@ -395,7 +398,10 @@ void AppState::apply(const Command& command) {
 	std::visit(Overloaded{
 		[&](const StartRunCmd& c) {
 			m_runConfig = c.config;
-			if (m_clientStats.connected) m_client.sendRunConfig(m_runConfig);
+			if (m_clientStats.connected) m_client.sendRunConfig(m_runConfig, net::SimCommand::None);
+		},
+		[&](const SimControlCmd& c) {
+			if (m_clientStats.connected) m_client.sendRunConfig(m_runConfig, c.command);
 		},
 		[&](const StartReplayCmd& c) {
 			if (!m_replayPlayer.open(c.csvPath)) return;

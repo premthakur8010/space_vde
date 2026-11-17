@@ -73,6 +73,7 @@ int main(int argc, char** argv)
 	std::optional<std::string> cliTargetHost;
 	std::optional<uint16_t>    cliStatePort;
 	std::optional<uint16_t>    cliConfigPort;
+	bool autoStart = false;
 
 	// Parse command-line overrides (e.g., --target-ip 192.168.1.100 --state-port 5002)
 	for (int i = 1; i < argc; ++i)
@@ -100,6 +101,10 @@ int main(int argc, char** argv)
 		else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)
 		{
 			configPath = argv[++i];
+		}
+		else if (std::strcmp(argv[i], "--auto-start") == 0)
+		{
+			autoStart = true;
 		}
 		else if (argv[i][0] != '-')
 		{
@@ -200,11 +205,21 @@ int main(int argc, char** argv)
 	// Register OS signal handler for graceful shutdown on Ctrl+C (SIGINT)
 	std::signal(SIGINT, signalHandler);
 
-	std::cout << "Starting 1 ms cyclic simulation loop with UDP streaming to "
-	          << targetHost << ":" << statePort << " (125 Hz). Press Ctrl+C to terminate." << std::endl;
-
+	bool isSimRunning = autoStart;
 	uint64_t stepCount = 0;
+	uint64_t tickCount = 0;
 	constexpr double dt = 0.001; // 1 ms physics integration timestep (1000 Hz)
+
+	std::cout << "Starting 1 ms cyclic simulation loop with UDP streaming to "
+	          << targetHost << ":" << statePort << " (125 Hz)." << std::endl;
+	if (isSimRunning)
+	{
+		std::cout << "Simulation AUTO-STARTED (1000 Hz physics). Press Ctrl+C to terminate." << std::endl;
+	}
+	else
+	{
+		std::cout << "Simulation INITIALIZED & PAUSED at T=0.0s. Waiting for START command from UI (press Ctrl+C to terminate)..." << std::endl;
+	}
 
 	// =========================================================================
 	// Main Cyclic Real-Time Execution Loop (1 kHz / 1 ms period)
@@ -213,56 +228,118 @@ int main(int argc, char** argv)
 	{
 		// Capture cycle start timestamp with monotonic steady_clock
 		const auto tickStart = std::chrono::steady_clock::now();
+		tickCount++;
 
 		// ---------------------------------------------------------------------
-		// Step 1: Check for Mid-Run Configuration Updates from UI Client
+		// Step 1: Check for Mid-Run Configuration Updates & Commands from UI
 		// ---------------------------------------------------------------------
-		// Non-blocking recv: if UI changed mass, inertia, or platform mapping, update parameters on the fly.
+		// Non-blocking recv: drain all pending commands so UI interactions are processed immediately.
 		space_docking::network::vde_net::RunConfigPacket cfgPkt{};
-		const int rxBytes = configReceiver.recvFrom(&cfgPkt, sizeof(cfgPkt));
-		if (rxBytes == static_cast<int>(sizeof(cfgPkt)) &&
-		    cfgPkt.magic == space_docking::network::vde_net::kProtocolMagic &&
-		    cfgPkt.version == space_docking::network::vde_net::kProtocolVersion)
+		while (true)
 		{
-			SD_LOG_INFO("Received RunConfig over UDP: Chaser Mass=" << cfgPkt.chaserMassKg
-			            << " kg, Target Mass=" << cfgPkt.targetMassKg
-			            << " kg, FrameMapping=" << cfgPkt.frameMapping);
+			const int rxBytes = configReceiver.recvFrom(&cfgPkt, sizeof(cfgPkt));
+			if (rxBytes <= 0)
+			{
+				break;
+			}
 
-			space_docking::dynamics::Matrix3 chInertia;
-			chInertia.m = cfgPkt.chaserInertia.m;
-			space_docking::dynamics::Matrix3 tgtInertia;
-			tgtInertia.m = cfgPkt.targetInertia.m;
-			const auto frameMapping = (cfgPkt.frameMapping == 1)
-			    ? space_docking::dynamics::FrameMapping::FLIPPED
-			    : space_docking::dynamics::FrameMapping::DEFAULT;
+			if (rxBytes == static_cast<int>(sizeof(cfgPkt)) &&
+			    cfgPkt.magic == space_docking::network::vde_net::kProtocolMagic &&
+			    cfgPkt.version == space_docking::network::vde_net::kProtocolVersion)
+			{
+				const auto cmd = static_cast<space_docking::network::vde_net::SimCommand>(cfgPkt.simCommand);
+				if (cmd == space_docking::network::vde_net::SimCommand::Start)
+				{
+					isSimRunning = true;
+					SD_LOG_INFO("Received START command from UI (simulation running at 1000 Hz)");
+					std::cout << "[SIM CONTROL] START command received: simulation RUNNING at 1000 Hz." << std::endl;
+				}
+				else if (cmd == space_docking::network::vde_net::SimCommand::Pause)
+				{
+					isSimRunning = false;
+					SD_LOG_INFO("Received PAUSE command from UI");
+					std::cout << "[SIM CONTROL] PAUSE command received: simulation PAUSED at T=" << (stepCount * dt) << "s." << std::endl;
+				}
+				else if (cmd == space_docking::network::vde_net::SimCommand::Reset)
+				{
+					isSimRunning = false;
+					stepCount = 0;
+					engine.initialize(config);
+					SD_LOG_INFO("Received RESET command from UI: Reinitialized at T=0.0s (Paused)");
+					std::cout << "[SIM CONTROL] RESET command received: simulation reset to initial conditions at T=0.0s (PAUSED)." << std::endl;
+				}
+				else if (cmd == space_docking::network::vde_net::SimCommand::ReloadXml)
+				{
+					isSimRunning = false;
+					stepCount = 0;
+					space_docking::dynamics::RunConfig reloadedConfig{};
+					reloadedConfig.targetHost = space_docking::network::vde_net::kDefaultHost;
+					reloadedConfig.configPort = space_docking::network::vde_net::kDefaultConfigPort;
+					reloadedConfig.statePort  = space_docking::network::vde_net::kDefaultStatePort;
 
-			// Safely update runtime physical parameters without resetting active trajectory or desyncing clocks
-			engine.updateParameters(cfgPkt.chaserMassKg, chInertia,
-			                        cfgPkt.targetMassKg, tgtInertia,
-			                        frameMapping);
+					auto ecReload = space_docking::dynamics::XmlConfigLoader::loadRunConfig(configPath, reloadedConfig);
+					if (ecReload == space_docking::dynamics::ErrorCode::OK)
+					{
+						config = reloadedConfig;
+						engine.initialize(config);
+						SD_LOG_INFO("Reloaded XML configuration from " << configPath << " and reset simulation");
+						std::cout << "[SIM CONTROL] Reloaded XML from " << configPath
+						          << " and reset to initial conditions at T=0.0s (PAUSED)." << std::endl;
+					}
+					else
+					{
+						SD_LOG_ERROR(ecReload, "Failed to reload XML configuration from " << configPath);
+						std::cerr << "[SIM ERROR] Failed to reload XML configuration from " << configPath << std::endl;
+					}
+				}
+				else
+				{
+					// Dynamic parameter update without trajectory reset
+					SD_LOG_INFO("Received RunConfig parameter update: Chaser Mass=" << cfgPkt.chaserMassKg
+					            << " kg, Target Mass=" << cfgPkt.targetMassKg
+					            << " kg, FrameMapping=" << cfgPkt.frameMapping);
+
+					space_docking::dynamics::Matrix3 chInertia;
+					chInertia.m = cfgPkt.chaserInertia.m;
+					space_docking::dynamics::Matrix3 tgtInertia;
+					tgtInertia.m = cfgPkt.targetInertia.m;
+					const auto frameMapping = (cfgPkt.frameMapping == 1)
+					    ? space_docking::dynamics::FrameMapping::FLIPPED
+					    : space_docking::dynamics::FrameMapping::DEFAULT;
+
+					engine.updateParameters(cfgPkt.chaserMassKg, chInertia,
+					                        cfgPkt.targetMassKg, tgtInertia,
+					                        frameMapping);
+				}
+			}
 		}
 
 		// ---------------------------------------------------------------------
-		// Step 2: Advance Physics Engine by dt (1.0 ms)
+		// Step 2: Advance Physics Engine by dt (1.0 ms) if running
 		// ---------------------------------------------------------------------
 		// Integrates Chaser and Target equations of motion via Symplectic Euler, resolves kinematics,
 		// computes relative state vector Y, and buffers CSV telemetry.
-		engine.step(dt);
-		stepCount++;
+		if (isSimRunning)
+		{
+			engine.step(dt);
+			stepCount++;
+		}
 
 		// ---------------------------------------------------------------------
 		// Step 3: Telemetry Downsampling & UDP Broadcast to UI (125 Hz)
 		// ---------------------------------------------------------------------
 		// Physics runs at 1000 Hz, but UI rendering runs at 120-125 Hz.
-		// Broadcasting every 8th physics step (1000 / 8 = 125 Hz) reduces network load by 87.5%
-		// while providing silky-smooth 60/120 FPS visual updates.
-		if (stepCount % 8 == 0)
+		// Broadcasting every 8th cyclic tick (1000 / 8 = 125 Hz) provides silky-smooth
+		// visual updates even when physics is paused (streaming static initial pose).
+		if (tickCount % 8 == 0)
 		{
 			space_docking::network::vde_net::StatePacket pkt{};
 			pkt.magic = space_docking::network::vde_net::kProtocolMagic;
 			pkt.version = space_docking::network::vde_net::kProtocolVersion;
 			pkt.sequence = stepCount;
 			pkt.timeS = stepCount * dt;
+			pkt.simRunState = isSimRunning ? static_cast<std::uint8_t>(space_docking::network::vde_net::SimRunState::Running)
+			                               : static_cast<std::uint8_t>(space_docking::network::vde_net::SimRunState::Paused);
 
 			// 3a. Relative State Vector (r_rel, v_rel, q_rel, qDot_rel)
 			const auto& rel = engine.getRelativeState();
@@ -351,7 +428,7 @@ int main(int argc, char** argv)
 		// ---------------------------------------------------------------------
 		// Step 4: Periodic Console Diagnostics (every 500 ms = 500 steps)
 		// ---------------------------------------------------------------------
-		if (stepCount % 500 == 0)
+		if (isSimRunning && (stepCount % 500 == 0))
 		{
 			const auto& rel = engine.getRelativeState();
 			const auto euler = rel.toEuler();

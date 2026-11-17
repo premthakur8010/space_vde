@@ -99,6 +99,7 @@ struct SpacecraftBundle {
 // Complete time-stamped telemetry snapshot consumed by 3D scenes, value panels, and live plots.
 struct SimSnapshot {
 	double           timeS = 0.0;
+	bool             isSimRunning = false;
 	RelativeState    relative;
 	VdeState         vde;
 	SpacecraftBundle spacecraft;
@@ -153,7 +154,10 @@ public:
 					  std::uint16_t statePort  = net::kDefaultStatePort);
 
 	// Serializes and transmits a RunConfigPacket to the Dynamics Engine's config port.
-	ErrorCode sendRunConfig(const RunConfig& config);
+	ErrorCode sendRunConfig(const RunConfig& config, net::SimCommand cmd = net::SimCommand::None);
+
+	// Resets the expected packet sequence tracking (used on simulation reset)
+	void      resetSequence() { m_lastSequence = 0; }
 
 	// Drains all queued UDP state packets and writes the newest snapshot into `out`.
 	bool      getLatestState(SimSnapshot& out);
@@ -253,6 +257,7 @@ enum class ViewId { Vde, Spacecraft };
 
 // UI-to-application command messages queued during widget rendering and applied cleanly on the next frame.
 struct StartRunCmd        { RunConfig config; };
+struct SimControlCmd      { net::SimCommand command; };
 struct StartReplayCmd     { std::string csvPath; ReplayTarget target = ReplayTarget::Both; };
 struct StopReplayCmd      {};
 struct ReplayPlayCmd      {};
@@ -262,7 +267,7 @@ struct ReplaySetSpeedCmd  { double factor = 1.0; };
 struct ToggleRecordingCmd { ViewId view = ViewId::Vde; std::string fileTag; };
 struct ExportDataCmd      { std::string filePrefix; };
 
-using Command = std::variant<StartRunCmd, StartReplayCmd, StopReplayCmd, ReplayPlayCmd, ReplayPauseCmd,
+using Command = std::variant<StartRunCmd, SimControlCmd, StartReplayCmd, StopReplayCmd, ReplayPlayCmd, ReplayPauseCmd,
 							 ReplaySeekCmd, ReplaySetSpeedCmd, ToggleRecordingCmd, ExportDataCmd>;
 
 // Read-only playback progress exposed to the replay transport bar.
@@ -298,6 +303,12 @@ public:
 
 	// Enqueues a UI action to be executed at the start of the next update() tick.
 	void submit(Command command) { m_pending.push_back(std::move(command)); }
+
+	void startSimulation()     { submit(SimControlCmd{net::SimCommand::Start}); }
+	void pauseSimulation()     { submit(SimControlCmd{net::SimCommand::Pause}); }
+	void resetSimulation()     { m_client.resetSequence(); submit(SimControlCmd{net::SimCommand::Reset}); }
+	void reloadXmlSimulation() { m_client.resetSequence(); submit(SimControlCmd{net::SimCommand::ReloadXml}); }
+	bool isSimRunning() const  { return m_live.isSimRunning; }
 
 	const RunConfig&         runConfig() const   { return m_runConfig; }
 	const VdeLimits&         vdeLimits() const   { return m_runConfig.vdeLimits; }

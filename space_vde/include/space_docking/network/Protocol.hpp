@@ -37,6 +37,27 @@ namespace space_docking::network::vde_net
 	using SpacecraftState = space_docking::dynamics::SpacecraftState;
 
 	/**
+	 * @brief Interactive execution control commands sent from UI client to Dynamics Engine.
+	 */
+	enum class SimCommand : std::uint8_t
+	{
+		None      = 0, // Dynamic parameter update (mass, inertia, frame mapping)
+		Start     = 1, // Start or resume physics integration (1000 Hz)
+		Pause     = 2, // Pause physics integration while maintaining UDP telemetry
+		Reset     = 3, // Reset simulation back to initial conditions at T=0.0s (Paused)
+		ReloadXml = 4  // Reload simulation_config.xml from disk and reset to T=0.0s (Paused)
+	};
+
+	/**
+	 * @brief Active run state of the Dynamics Engine physics loop.
+	 */
+	enum class SimRunState : std::uint8_t
+	{
+		Paused  = 0, // Physics halted; ready and broadcasting initial/current state at 125 Hz
+		Running = 1  // Physics advancing at 1000 Hz
+	};
+
+	/**
 	 * @brief Fixed-layout binary datagram sent from UI client to Dynamics Engine to configure or update a run.
 	 *
 	 * WIRE SPECIFICATION:
@@ -58,7 +79,8 @@ namespace space_docking::network::vde_net
 		double        alongTrackSepM = -12.0;            // Initial along-track separation distance [m]
 		std::int32_t  frameMapping   = 0;                // 0 = DEFAULT (Chaser on GSP), 1 = FLIPPED (Target on GSP)
 		std::uint8_t  disturbancesOn = 1;                // 1 = Orbital disturbances active, 0 = pure kinematics
-		char          ngcMode[64]    = {};               // Active Navigation, Guidance & Control mode string
+		std::uint8_t  simCommand     = 0;                // 0=None, 1=Start, 2=Pause, 3=Reset, 4=ReloadXml
+		char          ngcMode[63]    = {};               // Active Navigation, Guidance & Control mode string
 	};
 
 	/**
@@ -74,6 +96,7 @@ namespace space_docking::network::vde_net
 	 *   3. Hardware VDE Stewart platform kinematics and load-cell readings.
 	 *   4. Chaser & Target individual 6-DOF body states and ECI orbital vectors.
 	 *   5. NGC Guidance thruster wrench commands.
+	 *   6. Simulation running/paused state.
 	 */
 	struct StatePacket
 	{
@@ -88,7 +111,8 @@ namespace space_docking::network::vde_net
 		ForceTorque     ngcChaser{};                       // Chaser guidance thruster command (torque, then force)
 		ForceTorque     ngcTarget{};                       // Target guidance thruster command (torque, then force)
 		std::uint8_t    disturbancesOn = 1;                // 1 if disturbances are simulated, 0 otherwise
-		char            ngcMode[64]        = {};           // Guidance mode text (e.g. "FINAL APPROACH (closing)")
+		std::uint8_t    simRunState    = 0;                // 0 = Paused / Ready, 1 = Running
+		char            ngcMode[63]        = {};           // Guidance mode text (e.g. "FINAL APPROACH (closing)")
 		char            ngcFailureCase[64] = {};           // Active fault injection description
 	};
 

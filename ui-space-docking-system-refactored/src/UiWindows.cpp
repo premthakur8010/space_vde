@@ -274,14 +274,18 @@ public:
 			}
 
 			// 4. Network Section
-			sectionBanner("network", "UDP Network Endpoints (Dynamics Engine <-> Visualizer)");
+			sectionBanner("network", "UDP Network Endpoints (Dynamics Engine <-> Visualizer <-> Hardware)");
 			if (ImGui::BeginTable("##netTable", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg)) {
 				ImGui::TableSetupColumn("Tag", ImGuiTableColumnFlags_WidthFixed, 180.0f * dpi);
 				ImGui::TableSetupColumn("Value Box", ImGuiTableColumnFlags_WidthStretch);
 
-				tagRow("targethost", m_network.targetHost, sizeof(m_network.targetHost), "Destination host IP address");
+				tagRow("targethost", m_network.targetHost, sizeof(m_network.targetHost), "Destination host IP address for UI telemetry");
 				tagRow("configport", m_network.configPort, sizeof(m_network.configPort), "UDP port for RunConfig (Inbound to Dynamics Engine)");
 				tagRow("stateport", m_network.statePort, sizeof(m_network.statePort), "UDP port for State telemetry (Inbound to UI Visualizer)");
+				tagRow("hardwareenabled", m_network.hardwareEnabled, sizeof(m_network.hardwareEnabled), "Enable HIL hardware / emulator connection (true / false)");
+				tagRow("hardwarehost", m_network.hardwareHost, sizeof(m_network.hardwareHost), "Destination host IP address for Hardware Emulator");
+				tagRow("hardwarecommandport", m_network.hardwareCommandPort, sizeof(m_network.hardwareCommandPort), "UDP port for Hardware Commands (Inbound to Emulator :5006)");
+				tagRow("hardwaretelemetryport", m_network.hardwareTelemetryPort, sizeof(m_network.hardwareTelemetryPort), "UDP port for Hardware Telemetry (Inbound to Engine :5005)");
 
 				ImGui::EndTable();
 			}
@@ -304,14 +308,22 @@ public:
 		}
 
 		// Footer buttons
-		const float sendW = 230.0f * dpi;
+		const float saveW = 210.0f * dpi;
+		const float diskW = 160.0f * dpi;
 		const float reloadW = 150.0f * dpi;
-		const float closeW = 110.0f * dpi;
+		const float closeW = 90.0f * dpi;
 
-		ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - sendW - reloadW - closeW - ImGui::GetStyle().ItemSpacing.x * 2.0f);
+		ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - saveW - diskW - reloadW - closeW - ImGui::GetStyle().ItemSpacing.x * 3.0f);
 
-		if (ImGui::Button("SAVE XML & SEND (UDP)", ImVec2(sendW, 0))) {
+		if (ImGui::Button("SAVE XML & RESTART", ImVec2(saveW, 0))) {
 			saveAndApply(app);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("RELOAD FROM DISK", ImVec2(diskW, 0))) {
+			loadFromXmlFile(m_configFilePath, app);
+			app.reloadXmlSimulation();
+			m_statusMessage = "Reloaded " + m_configFilePath + " into UI and Physics Engine (Paused at T=0)!";
+			m_statusTimer = 3.5f;
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("REVERT TO DEFAULT", ImVec2(reloadW, 0))) {
@@ -359,9 +371,13 @@ private:
 	};
 
 	struct NetworkFields {
-		char targetHost[64] = "127.0.0.1";
-		char configPort[64] = "5001";
-		char statePort[64]  = "5002";
+		char targetHost[64]            = "127.0.0.1";
+		char configPort[64]            = "5001";
+		char statePort[64]             = "5002";
+		char hardwareEnabled[64]       = "true";
+		char hardwareHost[64]          = "127.0.0.1";
+		char hardwareCommandPort[64]   = "5006";
+		char hardwareTelemetryPort[64] = "5005";
 	};
 
 	struct LoggingFields {
@@ -534,6 +550,10 @@ private:
 			copyField(m_network.targetHost, sizeof(m_network.targetHost), extractTagContent(netBlock, kTargetHost));
 			copyField(m_network.configPort, sizeof(m_network.configPort), extractTagContent(netBlock, kConfigPort));
 			copyField(m_network.statePort, sizeof(m_network.statePort), extractTagContent(netBlock, kStatePort));
+			copyField(m_network.hardwareEnabled, sizeof(m_network.hardwareEnabled), extractTagContent(netBlock, kHardwareEnabled));
+			copyField(m_network.hardwareHost, sizeof(m_network.hardwareHost), extractTagContent(netBlock, kHardwareHost));
+			copyField(m_network.hardwareCommandPort, sizeof(m_network.hardwareCommandPort), extractTagContent(netBlock, kHardwareCommandPort));
+			copyField(m_network.hardwareTelemetryPort, sizeof(m_network.hardwareTelemetryPort), extractTagContent(netBlock, kHardwareTelemetryPort));
 		}
 
 		// Logging
@@ -577,6 +597,10 @@ private:
 		updateXmlBlock(m_rawXml, kNetwork, kTargetHost, m_network.targetHost);
 		updateXmlBlock(m_rawXml, kNetwork, kConfigPort, m_network.configPort);
 		updateXmlBlock(m_rawXml, kNetwork, kStatePort, m_network.statePort);
+		updateXmlBlock(m_rawXml, kNetwork, kHardwareEnabled, m_network.hardwareEnabled);
+		updateXmlBlock(m_rawXml, kNetwork, kHardwareHost, m_network.hardwareHost);
+		updateXmlBlock(m_rawXml, kNetwork, kHardwareCommandPort, m_network.hardwareCommandPort);
+		updateXmlBlock(m_rawXml, kNetwork, kHardwareTelemetryPort, m_network.hardwareTelemetryPort);
 
 		updateXmlBlock(m_rawXml, kLogging, kEnabled, m_logging.enabled);
 		updateXmlBlock(m_rawXml, kLogging, kLogDirectory, m_logging.logDirectory);
@@ -615,11 +639,12 @@ private:
 		} catch (...) {}
 
 		app.submit(StartRunCmd{cfg});
+		app.reloadXmlSimulation();
 
 		if (wroteDisk) {
-			m_statusMessage = "Saved to " + m_configFilePath + " and dispatched RunConfig over UDP!";
+			m_statusMessage = "Saved to " + m_configFilePath + " and reloaded simulation in Physics Engine (Paused at T=0)!";
 		} else {
-			m_statusMessage = "Dispatched RunConfig over UDP!";
+			m_statusMessage = "Dispatched ReloadXml command over UDP!";
 		}
 		m_statusTimer = 4.0f;
 	}
