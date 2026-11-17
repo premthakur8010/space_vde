@@ -73,13 +73,14 @@ This file tracks all modifications, architectural updates, and feature additions
 * Because it exists as a plain file on disk, a user could directly edit or delete `default.xml`, corrupting the known-good baseline.
 * To make `default.xml` tamper-proof, the canonical default configuration must live compiled inside C++ code so any modification or deletion on disk is automatically detected and overwritten.
 
-### 2. Compiled-In Factory Defaults Header (`space_vde/include/space_docking/dynamics_engine/DefaultConfig.hpp`)
-* Created `DefaultConfig.hpp` containing:
+### 2. Compiled-In Factory Defaults & Standalone Generator (`DefaultConfig.hpp` & `generate_default_xml.cpp`)
+* Created `space_vde/include/space_docking/dynamics_engine/DefaultConfig.hpp` containing:
   * `kDefaultConfigXml`: The single-source-of-truth factory XML configuration embedded as a `constexpr std::string_view` raw string literal in the compiled binary.
   * `ensureDefaultConfigFile(path)` / `ensureDefaultConfigNextTo(simConfigPath)`:
     * Reads `default.xml` from disk and compares it against `kDefaultConfigXml` (normalizing CRLF/LF line endings).
     * If `default.xml` is missing or its contents differ from `kDefaultConfigXml`, automatically rewrites `default.xml` from the compiled-in C++ template (restoring write permissions first if needed) and prints a `[DEFAULT CONFIG WARNING]` alert to the console/log.
     * Returns `DefaultFileStatus` (`Intact`, `RestoredMissing`, `RestoredTampered`, or `WriteFailed`).
+* Created standalone C++ generator `space_vde/src/dynamics_engine/generate_default_xml.cpp` (compiled to `space_vde/build/generate_default_xml`) which can be invoked directly at any time to verify and regenerate `config/default.xml`.
 
 ### 3. Automatic Enforcement in Physics Engine & UI
 * **Dynamics Engine (`dynamics_engine_main.cpp`)**:

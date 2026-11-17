@@ -88,6 +88,13 @@ if (WIN32 AND MINGW)
 	target_link_libraries(physics_engine PRIVATE -static -static-libgcc -static-libstdc++)
 endif()
 
+# Standalone Tamper-Proof default.xml Generator Executable
+add_executable(generate_default_xml src/dynamics_engine/generate_default_xml.cpp)
+target_include_directories(generate_default_xml PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+if (WIN32 AND MINGW)
+	target_link_libraries(generate_default_xml PRIVATE -static -static-libgcc -static-libstdc++)
+endif()
+
 # ============================================================
 # Automated Testing Suite
 # ============================================================
