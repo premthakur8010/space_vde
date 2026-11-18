@@ -343,10 +343,6 @@ ToolbarAction drawToolbar(AppState& app, const ToolbarOptions& opt) {
 	if (opt.showReplay)   { if (toolbarButton("REPLAY")) action = ToolbarAction::Replay; ImGui::SameLine(); }
 	if (opt.showAnalysis) { if (toolbarButton("OPEN ANALYSIS")) action = ToolbarAction::OpenAnalysis; ImGui::SameLine(); }
 	if (toolbarButton("EXPORT DATA")) app.submit(ExportDataCmd{opt.exportPrefix});
-	ImGui::SameLine();
-	const bool recording = app.isRecording(opt.view);
-	if (toolbarButton(recording ? "STOP RECORDING" : "RECORD VIDEO", recording, color::kRecordRed))
-		app.submit(ToggleRecordingCmd{opt.view, opt.recordTag});
 	const float rowY = ImGui::GetItemRectMin().y, rowH = ImGui::GetItemRectSize().y;
 
 	char clock[64];
@@ -359,20 +355,14 @@ ToolbarAction drawToolbar(AppState& app, const ToolbarOptions& opt) {
 	ImGui::PushFont(g_fonts.mono, 0.0f);
 	const float clockW = ImGui::CalcTextSize(clock).x;
 	ImGui::PopFont();
-	const float recW = recording ? ImGui::CalcTextSize("REC").x + st.FramePadding.x * 2 + st.ItemSpacing.x * 2 : 0.0f;
 	const float statusW = ImGui::CalcTextSize(status).x + (opt.replayMode || app.clientStats().hasState ? st.FramePadding.x * 2 : 0.0f);
 
-	ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - (clockW + recW + st.ItemSpacing.x * 3 + statusW));
+	ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - (clockW + st.ItemSpacing.x * 3 + statusW));
 	const float textY = rowY + (rowH - ImGui::GetTextLineHeight()) * 0.5f;
 	ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, textY));
 	ImGui::PushFont(g_fonts.mono, 0.0f);
 	ImGui::TextUnformatted(clock);
 	ImGui::PopFont();
-	if (recording) {
-		ImGui::SameLine(0, st.ItemSpacing.x * 2);
-		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, textY - st.FramePadding.y * 0.5f));
-		statusTag("REC", color::kRecordRed);
-	}
 	ImGui::SameLine(0, st.ItemSpacing.x * 3);
 	if (opt.replayMode) {
 		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, textY - st.FramePadding.y * 0.5f));

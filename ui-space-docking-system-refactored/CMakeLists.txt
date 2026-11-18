@@ -93,7 +93,8 @@ target_link_libraries(vde_sim PRIVATE
   glad imgui glm::glm glfw OpenGL::GL
   $<$<PLATFORM_ID:Windows>:comdlg32 ws2_32 winmm>)
 target_compile_definitions(vde_sim PRIVATE
-  VDE_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/misc/fonts")
+  VDE_FONT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/misc/fonts"
+  VDE_MODEL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/models")
 
 # Configure subsystem and static runtime linking on Windows builds.
 if(WIN32)
@@ -111,5 +112,19 @@ add_custom_command(TARGET vde_sim POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/misc/fonts/Roboto-Medium.ttf
           ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui/misc/fonts/Cousine-Regular.ttf
-          $<TARGET_FILE_DIR:vde_sim>/fonts)
+          $<TARGET_FILE_DIR:vde_sim>/fonts
+  COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:vde_sim>/models
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/materials.mtl
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/chaser.obj
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/target.obj
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/earth.obj
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/vde_base.obj
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/vde_gantry.obj
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/vde_platform.obj
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/leg_sleeve.obj
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/leg_piston.obj
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/leg_joint.obj
+          ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/axis_triad.obj
+          $<TARGET_FILE_DIR:vde_sim>/models)
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT vde_sim)

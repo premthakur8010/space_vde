@@ -96,6 +96,14 @@
 
         <!-- UDP port to which Dynamics Engine streams StatePacket telemetry to UI -->
         <stateport>5002</stateport>
+
+        <!-- Hardware-in-the-Loop (HIL) VDE hardware / Hardware Emulator endpoints -->
+        <hardwareenabled>true</hardwareenabled>
+        <hardwarehost>127.0.0.1</hardwarehost>
+        <!-- UDP port on which VDE Hardware / Emulator receives HardwareCommandPacket (105 bytes) -->
+        <hardwarecommandport>5006</hardwarecommandport>
+        <!-- UDP port on which Dynamics Engine receives HardwareTelemetryPacket (225 bytes) -->
+        <hardwaretelemetryport>5005</hardwaretelemetryport>
     </network>
 
     <!-- ===================================================================== -->
