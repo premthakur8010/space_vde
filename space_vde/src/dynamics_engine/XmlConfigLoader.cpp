@@ -111,6 +111,15 @@ namespace space_docking::dynamics
 				outConfig.targetInertia.m[8] = extractDouble(inertiaBlock, tags::kIzz, 0.0);
 			}
 
+			const std::string posBlock = extractTagContent(targetBlock, tags::kInitialPosition);
+			if (!posBlock.empty())
+			{
+				// XML positions are in millimetres (VDE base reference frame at 0,0,0); engine state is SI meters.
+				outConfig.targetInitialPosition.position.x = extractDouble(posBlock, tags::kX, 0.0) * space_docking::utils::kMmToM;
+				outConfig.targetInitialPosition.position.y = extractDouble(posBlock, tags::kY, 0.0) * space_docking::utils::kMmToM;
+				outConfig.targetInitialPosition.position.z = extractDouble(posBlock, tags::kZ, 0.0) * space_docking::utils::kMmToM;
+			}
+
 			const std::string velBlock = extractTagContent(targetBlock, tags::kInitialVelocity);
 			if (!velBlock.empty())
 			{

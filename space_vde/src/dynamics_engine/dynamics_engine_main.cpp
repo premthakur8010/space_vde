@@ -165,7 +165,13 @@ int main(int argc, char** argv)
 	          << config.initialSeparation.position.z << ") m (config: "
 	          << space_docking::utils::metersToOpenGl(config.initialSeparation.position.x) << ", "
 	          << space_docking::utils::metersToOpenGl(config.initialSeparation.position.y) << ", "
-	          << space_docking::utils::metersToOpenGl(config.initialSeparation.position.z) << " mm = OpenGL units, 1:1)" << std::endl;
+	          << space_docking::utils::metersToOpenGl(config.initialSeparation.position.z) << " mm from VDE base 0,0,0)" << std::endl;
+	std::cout << "Target Initial Pos: (" << config.targetInitialPosition.position.x << ", "
+	          << config.targetInitialPosition.position.y << ", "
+	          << config.targetInitialPosition.position.z << ") m (config: "
+	          << space_docking::utils::metersToOpenGl(config.targetInitialPosition.position.x) << ", "
+	          << space_docking::utils::metersToOpenGl(config.targetInitialPosition.position.y) << ", "
+	          << space_docking::utils::metersToOpenGl(config.targetInitialPosition.position.z) << " mm from VDE base 0,0,0)" << std::endl;
 	std::cout << "Chaser Initial Vel: (" << config.chaserInitialVelocity.x << ", "
 	          << config.chaserInitialVelocity.y << ", "
 	          << config.chaserInitialVelocity.z << ") m/s" << std::endl;
@@ -373,7 +379,7 @@ int main(int argc, char** argv)
 			pkt.chaser.inertiaKgM2.m = chaser.getInertia().m;
 			pkt.chaser.linearRateMS = { chaserState.velocity.x, chaserState.velocity.y, chaserState.velocity.z };
 			pkt.chaser.orientationRateRadS = { chaserState.angularRate.x, chaserState.angularRate.y, chaserState.angularRate.z };
-			pkt.chaser.eciPositionM = { chaserState.pose.position.x, chaserState.pose.position.y, chaserState.pose.position.z };
+			pkt.chaser.eciPositionM = { rel.pose.position.x, rel.pose.position.y, rel.pose.position.z };
 			pkt.chaser.eciVelocityMS = { chaserState.velocity.x, chaserState.velocity.y, chaserState.velocity.z };
 			pkt.chaser.eciOrientationRad = { chaserEuler.roll, chaserEuler.pitch, chaserEuler.yaw };
 			pkt.chaser.eciOrientationRateRadS = { chaserState.angularRate.x, chaserState.angularRate.y, chaserState.angularRate.z };
@@ -388,7 +394,7 @@ int main(int argc, char** argv)
 			pkt.target.inertiaKgM2.m = target.getInertia().m;
 			pkt.target.linearRateMS = { targetState.velocity.x, targetState.velocity.y, targetState.velocity.z };
 			pkt.target.orientationRateRadS = { targetState.angularRate.x, targetState.angularRate.y, targetState.angularRate.z };
-			pkt.target.eciPositionM = { targetState.pose.position.x, targetState.pose.position.y, targetState.pose.position.z };
+			pkt.target.eciPositionM = { 0.0, 0.0, 0.0 };
 			pkt.target.eciVelocityMS = { targetState.velocity.x, targetState.velocity.y, targetState.velocity.z };
 			pkt.target.eciOrientationRad = { targetEuler.roll, targetEuler.pitch, targetEuler.yaw };
 			pkt.target.eciOrientationRateRadS = { targetState.angularRate.x, targetState.angularRate.y, targetState.angularRate.z };
@@ -397,15 +403,21 @@ int main(int argc, char** argv)
 			// 3d. VDE Stewart Platform Hardware Coordinate Mapping:
 			// -----------------------------------------------------------------
 			// In the physical ground testbed facility:
-			// - The Ground Stewart Platform (GSP) moves on 6 hydraulic/electric actuator legs.
+			// - The VDE Base Platform (B_sp) is the (0, 0, 0) reference origin.
+			// - The Ground Stewart Platform (GSP / P_sp) moves on 6 actuator legs above B_sp.
 			// - Docking approach axis (spacecraft Line-of-Sight, +X) is physically oriented
-			//   along the VERTICAL axis (+Z) of the testbed toward the overhead ceiling gantry.
-			// - Direct 1:1 hardware mapping: separation of 550 mm maps directly to physical stroke [0.0, 0.550] m.
+			//   along the VERTICAL axis (+Z) of the testbed toward the overhead ceiling gantry (O_sp).
+			// - Direct 1:1 hardware mapping relative to B_sp (0,0,0): Chaser starts at 100 mm (0.100 m)
+			//   and travels 550 mm upward to the Target at 650 mm (0.650 m), so VDE Z spans [0.100, 0.650] m.
 			// - Spacecraft lateral errors (+Y, +Z) map to testbed horizontal sway (+X, +Y),
 			//   clamped to physical hexapod travel boundaries (+/- 0.100 m).
 			// - Angular roll/pitch are clamped to +/- 5 deg (+/- 0.087 rad); yaw to +/- 10 deg (+/- 0.174 rad).
 			const auto relEuler = rel.toEuler();
-			const double vdeZ = std::clamp(0.550 + rel.pose.position.x, 0.0, 0.550);
+			const double vdeMaxZ = (targetState.pose.position.x > 0.0) ? targetState.pose.position.x : 0.650;
+			const double vdeRawZ = (targetState.pose.position.x > 0.0)
+			    ? chaserState.pose.position.x
+			    : (0.650 + rel.pose.position.x);
+			const double vdeZ = std::clamp(vdeRawZ, 0.0, vdeMaxZ);
 			const double vdeVz = rel.velocity.x;
 
 			// Clamp horizontal displacements to Stewart platform travel envelope (+/- 100 mm)

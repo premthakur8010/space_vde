@@ -317,7 +317,7 @@ SimSnapshot ReplayPlayer::snapshot(const RunConfig& cfg) const {
 	const double t = 37.0 + 1.6 * m_time;
 	SimSnapshot s;
 	s.timeS = m_time;
-	s.vde.positionM      = {0.06 * std::sin(0.21 * t), 0.045 * std::sin(0.17 * t + 1.0), 0.275 + 0.20 * std::sin(0.11 * t)};
+	s.vde.positionM      = {0.06 * std::sin(0.21 * t), 0.045 * std::sin(0.17 * t + 1.0), 0.375 + 0.20 * std::sin(0.11 * t)};
 	s.vde.orientationRad = {3.0 * units::kRadPerDeg * std::sin(0.31 * t),
 							2.5 * units::kRadPerDeg * std::sin(0.23 * t + 0.5),
 							7.0 * units::kRadPerDeg * std::sin(0.13 * t)};
@@ -356,6 +356,7 @@ AppState::AppState(RunConfig initialConfig) : m_runConfig(std::move(initialConfi
 	m_live.spacecraft.ngc.failureCase    = "None (nominal)";
 	m_live.spacecraft.ngc.disturbancesOn = m_runConfig.disturbancesOn;
 	m_live.relative.pose.position.x      = m_runConfig.alongTrackSepM;
+	m_live.vde.positionM.z               = 0.100;
 }
 
 // Opens the UDP sockets and immediately transmits the initial RunConfig packet to the Dynamics Engine.

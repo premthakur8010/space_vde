@@ -43,6 +43,7 @@ namespace space_docking::dynamics
 		m_chaser.setState(chaserState);
 
 		BodyState targetState{};
+		targetState.pose = config.targetInitialPosition;
 		targetState.velocity = config.targetInitialVelocity;
 		m_target.setState(targetState);
 

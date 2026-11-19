@@ -234,9 +234,9 @@ public:
 				tagRow("ixx", m_chaser.ixx, sizeof(m_chaser.ixx), "kg·m² (Inertia tensor X-axis)");
 				tagRow("iyy", m_chaser.iyy, sizeof(m_chaser.iyy), "kg·m² (Inertia tensor Y-axis)");
 				tagRow("izz", m_chaser.izz, sizeof(m_chaser.izz), "kg·m² (Inertia tensor Z-axis)");
-				tagRow("x", m_chaser.posX, sizeof(m_chaser.posX), "mm (Initial separation along X-axis, e.g. -550.0)");
-				tagRow("y", m_chaser.posY, sizeof(m_chaser.posY), "mm (Initial separation along Y-axis)");
-				tagRow("z", m_chaser.posZ, sizeof(m_chaser.posZ), "mm (Initial separation along Z-axis)");
+				tagRow("x", m_chaser.posX, sizeof(m_chaser.posX), "mm (Initial position from VDE base 0,0,0, e.g. 100.0)");
+				tagRow("y", m_chaser.posY, sizeof(m_chaser.posY), "mm (Initial lateral Y offset from VDE base 0,0,0)");
+				tagRow("z", m_chaser.posZ, sizeof(m_chaser.posZ), "mm (Initial lateral Z offset from VDE base 0,0,0)");
 				tagRow("vx", m_chaser.velX, sizeof(m_chaser.velX), "m/s (Closing approach velocity Vx, e.g. 0.05)");
 				tagRow("vy", m_chaser.velY, sizeof(m_chaser.velY), "m/s (Initial velocity Vy)");
 				tagRow("vz", m_chaser.velZ, sizeof(m_chaser.velZ), "m/s (Initial velocity Vz)");
@@ -254,9 +254,9 @@ public:
 				tagRow("ixx", m_target.ixx, sizeof(m_target.ixx), "kg·m² (Inertia tensor X-axis)");
 				tagRow("iyy", m_target.iyy, sizeof(m_target.iyy), "kg·m² (Inertia tensor Y-axis)");
 				tagRow("izz", m_target.izz, sizeof(m_target.izz), "kg·m² (Inertia tensor Z-axis)");
-				tagRow("x", m_target.posX, sizeof(m_target.posX), "mm (Target position origin = 0)");
-				tagRow("y", m_target.posY, sizeof(m_target.posY), "mm (Target position origin = 0)");
-				tagRow("z", m_target.posZ, sizeof(m_target.posZ), "mm (Target position origin = 0)");
+				tagRow("x", m_target.posX, sizeof(m_target.posX), "mm (Target position from VDE base 0,0,0, e.g. 650.0)");
+				tagRow("y", m_target.posY, sizeof(m_target.posY), "mm (Target lateral Y offset from VDE base = 0)");
+				tagRow("z", m_target.posZ, sizeof(m_target.posZ), "mm (Target lateral Z offset from VDE base = 0)");
 				tagRow("vx", m_target.velX, sizeof(m_target.velX), "m/s (Target velocity Vx = 0)");
 				tagRow("vy", m_target.velY, sizeof(m_target.velY), "m/s (Target velocity Vy = 0)");
 				tagRow("vz", m_target.velZ, sizeof(m_target.velZ), "m/s (Target velocity Vz = 0)");
@@ -351,7 +351,7 @@ private:
 		char ixx[64]    = "5.0";
 		char iyy[64]    = "5.0";
 		char izz[64]    = "10.0";
-		char posX[64]   = "-550.0";
+		char posX[64]   = "100.0";
 		char posY[64]   = "0.0";
 		char posZ[64]   = "0.0";
 		char velX[64]   = "0.05";
@@ -364,7 +364,7 @@ private:
 		char ixx[64]    = "10.0";
 		char iyy[64]    = "10.0";
 		char izz[64]    = "20.0";
-		char posX[64]   = "0.0";
+		char posX[64]   = "650.0";
 		char posY[64]   = "0.0";
 		char posZ[64]   = "0.0";
 		char velX[64]   = "0.0";
@@ -633,7 +633,7 @@ private:
 				0.0, std::stod(m_target.iyy), 0.0,
 				0.0, 0.0, std::stod(m_target.izz)
 			}}};
-			cfg.alongTrackSepM = std::stod(m_chaser.posX) * 0.001; // mm to meters
+			cfg.alongTrackSepM = (std::stod(m_chaser.posX) - std::stod(m_target.posX)) * 0.001; // mm to meters
 			std::string fm = m_platform.frameMapping;
 			std::transform(fm.begin(), fm.end(), fm.begin(), ::tolower);
 			cfg.frameMapping = (fm == "flipped") ? FrameMapping::Flipped : FrameMapping::Default;

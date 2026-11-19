@@ -431,6 +431,7 @@ namespace space_docking::dynamics
 		Matrix3 targetInertia{};
 		Vector3 initialOrbitElements{};
 		Pose initialSeparation{};
+		Pose targetInitialPosition{};
 		Vector3 chaserInitialVelocity{}; // Loaded dynamically from XML configuration
 		Vector3 targetInitialVelocity{}; // Loaded dynamically from XML configuration
 		FrameMapping frameMapping{FrameMapping::DEFAULT};

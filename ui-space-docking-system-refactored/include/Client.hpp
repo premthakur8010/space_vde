@@ -109,7 +109,7 @@ struct SimSnapshot {
 struct VdeLimits {
 	double xMinM = -0.100, xMaxM = 0.100;
 	double yMinM = -0.100, yMaxM = 0.100;
-	double zMinM = 0.0,    zMaxM = 0.550;
+	double zMinM = 0.100,  zMaxM = 0.650;
 	double rollMaxRad  = 5.0 * units::kRadPerDeg;
 	double pitchMaxRad = 5.0 * units::kRadPerDeg;
 	double yawMaxRad   = 10.0 * units::kRadPerDeg;
