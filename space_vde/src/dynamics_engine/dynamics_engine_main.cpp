@@ -239,6 +239,16 @@ int main(int argc, char** argv)
 		std::cout << "Simulation INITIALIZED & PAUSED at T=0.0s. Waiting for START command from UI (press Ctrl+C to terminate)..." << std::endl;
 	}
 
+	// 1 ms loop timing verification: measured period of every running cycle is written to the CSV
+	// (cycle_period_us column) and summarized here so the 1 kHz cadence can be checked after a run.
+	std::optional<std::chrono::steady_clock::time_point> prevTickStart;
+	std::optional<std::chrono::steady_clock::time_point> runWallStart;
+	uint64_t timedCycles = 0;
+	uint64_t overrunCycles = 0;
+	double periodSumUs = 0.0;
+	double periodMinUs = 1e12;
+	double periodMaxUs = 0.0;
+
 	// =========================================================================
 	// Main Cyclic Real-Time Execution Loop (1 kHz / 1 ms period)
 	// =========================================================================
@@ -247,6 +257,12 @@ int main(int argc, char** argv)
 		// Capture cycle start timestamp with monotonic steady_clock
 		const auto tickStart = std::chrono::steady_clock::now();
 		tickCount++;
+
+		// Measured period between the start of the previous cycle and this one (target: 1000 us)
+		const double cyclePeriodUs = prevTickStart
+		    ? std::chrono::duration<double, std::micro>(tickStart - *prevTickStart).count()
+		    : 0.0;
+		prevTickStart = tickStart;
 
 		// ---------------------------------------------------------------------
 		// Step 1: Check for Mid-Run Configuration Updates & Commands from UI
@@ -345,8 +361,31 @@ int main(int argc, char** argv)
 		// computes relative state vector Y, and buffers CSV telemetry.
 		if (isSimRunning)
 		{
+			// Wall-clock reference restarts with each fresh run (T=0 after START/RESET/ReloadXml)
+			if (stepCount == 0 || !runWallStart)
+			{
+				runWallStart = tickStart;
+			}
+			const double wallTimeS = std::chrono::duration<double>(tickStart - *runWallStart).count();
+
+			// The first cycle after a start/resume has no meaningful period (it spans the pause)
+			const double loggedPeriodUs = (stepCount == 0) ? 0.0 : cyclePeriodUs;
+			engine.setLoopTiming(wallTimeS, loggedPeriodUs);
 			engine.step(dt);
 			stepCount++;
+
+			if (loggedPeriodUs > 0.0)
+			{
+				timedCycles++;
+				periodSumUs += loggedPeriodUs;
+				// Parenthesized to avoid the Windows.h min/max macros
+				periodMinUs = (std::min)(periodMinUs, loggedPeriodUs);
+				periodMaxUs = (std::max)(periodMaxUs, loggedPeriodUs);
+				if (loggedPeriodUs > space_docking::dynamics::kCycleOverrunThresholdUs)
+				{
+					overrunCycles++;
+				}
+			}
 		}
 
 		// ---------------------------------------------------------------------
@@ -499,6 +538,13 @@ int main(int argc, char** argv)
 	}
 
 	std::cout << "\nDynamics Engine cleanly stopped after " << stepCount << " cycles (" << (stepCount * dt) << " seconds)." << std::endl;
+	if (timedCycles > 0)
+	{
+		std::cout << "1 ms loop timing over " << timedCycles << " cycles: mean "
+		          << (periodSumUs / static_cast<double>(timedCycles)) << " us, min " << periodMinUs
+		          << " us, max " << periodMaxUs << " us, overruns (>"
+		          << space_docking::dynamics::kCycleOverrunThresholdUs << " us): " << overrunCycles << std::endl;
+	}
 	engine.flushLogs();
 
 #if defined(_WIN32)

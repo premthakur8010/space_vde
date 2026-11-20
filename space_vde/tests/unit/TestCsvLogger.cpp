@@ -13,12 +13,14 @@
 #include "space_docking/dynamics_engine/Types.hpp"
 #include "space_docking/dynamics_engine/XmlConfigLoader.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <vector>
 
 // Test assertion macro that always executes even in Release (-DNDEBUG) builds
 #define REQUIRE(cond) \
@@ -218,6 +220,64 @@ int main()
 		inFile.close();
 
 		REQUIRE(rowCount == 3);
+	}
+
+	// =========================================================================
+	// 4. Test 1 ms CSV Logging (logdecimation = 1) with loop timing columns
+	// =========================================================================
+	{
+		std::cout << "  Testing 1 ms CSV logging with loop timing columns..." << std::endl;
+		RunConfig config{};
+		REQUIRE(config.logDecimation == 1);
+		config.chaserMass = 100.0;
+		config.targetMass = 100.0;
+		config.loggingEnabled = true;
+		config.logDirectory = "logs";
+		config.logFileName = "test_engine_1ms.csv";
+
+		DynamicsEngine engine;
+		REQUIRE(engine.initialize(config) == ErrorCode::OK);
+
+		constexpr double dt = 0.001;
+		constexpr int kSteps = 25;
+		for (int i = 0; i < kSteps; ++i)
+		{
+			// Cycle 6 simulates a late cycle (1500 us) that must be flagged as an overrun
+			const double periodUs = (i == 0) ? 0.0 : ((i == 5) ? 1500.0 : 1000.0);
+			engine.setLoopTiming(i * 0.001, periodUs);
+			REQUIRE(engine.step(dt) == ErrorCode::OK);
+		}
+		engine.flushLogs();
+
+		std::ifstream inFile("logs/test_engine_1ms.csv");
+		REQUIRE(inFile.is_open());
+
+		std::string header;
+		std::getline(inFile, header);
+		REQUIRE(header.find("wall_time_s,cycle_period_us,cycle_overrun") != std::string::npos);
+		REQUIRE(std::count(header.begin(), header.end(), ',') == 27); // 28 columns
+
+		std::vector<std::string> rows;
+		std::string line;
+		while (std::getline(inFile, line))
+		{
+			if (!line.empty())
+			{
+				rows.push_back(line);
+			}
+		}
+		inFile.close();
+
+		// One row per 1 ms step, simulated time advancing by exactly 1 ms per row
+		REQUIRE(rows.size() == static_cast<size_t>(kSteps));
+		for (size_t i = 0; i < rows.size(); ++i)
+		{
+			const double t = std::stod(rows[i].substr(0, rows[i].find(',')));
+			REQUIRE(std::abs(t - 0.001 * static_cast<double>(i + 1)) < 1e-6);
+			REQUIRE(std::count(rows[i].begin(), rows[i].end(), ',') == 27);
+		}
+		REQUIRE(rows[1].find(",1000.0,0") != std::string::npos);
+		REQUIRE(rows[5].find(",1500.0,1") != std::string::npos);
 	}
 
 	std::cout << "[PASS] All CsvLogger and TelemetryAccumulator tests passed successfully!\n";

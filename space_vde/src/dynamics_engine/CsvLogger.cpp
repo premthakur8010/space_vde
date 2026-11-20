@@ -130,10 +130,12 @@ namespace space_docking::dynamics
 			m_isOpen.store(other.m_isOpen.load());
 			m_writtenRows.store(other.m_writtenRows.load());
 			m_queue = std::move(other.m_queue);
+			m_pendingRows.store(m_queue.size());
 
 			other.m_running = false;
 			other.m_isOpen = false;
 			other.m_writtenRows = 0;
+			other.m_pendingRows = 0;
 			lockOther.unlock();
 
 			if (other.m_workerThread.joinable())
@@ -188,6 +190,7 @@ namespace space_docking::dynamics
 		m_isOpen = true;
 		m_running = true;
 		m_writtenRows = 0;
+		m_pendingRows = 0;
 
 		// Launch low-priority background thread for asynchronous disk writing
 		m_workerThread = std::thread(&CsvLogger::workerLoop, this);
@@ -235,12 +238,14 @@ namespace space_docking::dynamics
 		{
 			// Drop oldest entry to protect memory if disk I/O stalls permanently
 			m_queue.pop();
+			m_pendingRows.fetch_sub(1);
 		}
 
 		QueueItem item;
 		item.type = QueueItemType::TelemetryEntry;
 		item.entry = entry;
 		m_queue.push(std::move(item));
+		m_pendingRows.fetch_add(1);
 		lock.unlock();
 
 		// Notify background thread that new data is available
@@ -260,12 +265,14 @@ namespace space_docking::dynamics
 		if (m_queue.size() >= kMaxQueueCapacity)
 		{
 			m_queue.pop();
+			m_pendingRows.fetch_sub(1);
 		}
 
 		QueueItem item;
 		item.type = QueueItemType::RawValues;
 		item.values = values;
 		m_queue.push(std::move(item));
+		m_pendingRows.fetch_add(1);
 		lock.unlock();
 
 		m_cv.notify_one();
@@ -286,23 +293,13 @@ namespace space_docking::dynamics
 			return;
 		}
 
-		// Wait until worker thread has fully drained the in-memory queue to disk
-		while (true)
+		// Wait until every queued row has been written AND flushed by the worker.
+		// (Checking only m_queue.empty() is not enough: the worker pops a batch before writing it.)
+		// The worker owns m_file, so this thread never touches the stream directly.
+		while (m_pendingRows.load() > 0 && m_running)
 		{
-			{
-				std::lock_guard<std::mutex> lock(m_mutex);
-				if (m_queue.empty())
-				{
-					break;
-				}
-			}
+			m_cv.notify_one();
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		}
-
-		std::lock_guard<std::mutex> lock(m_mutex);
-		if (m_file.is_open())
-		{
-			m_file.flush();
 		}
 	}
 
@@ -319,10 +316,10 @@ namespace space_docking::dynamics
 		return m_queue.size();
 	}
 
-	// Writes the 25-column CSV header row defining all trajectory fields
+	// Writes the 28-column CSV header row defining all trajectory and loop-timing fields
 	void CsvLogger::writeHeader()
 	{
-		// Streamlined 25-column CSV header designed specifically for 3D visualization replay
+		// 25 replay columns + 3 real-time loop timing columns (wall_time_s, cycle_period_us, cycle_overrun)
 		m_file << "timestamp_s,cycle_count,"
 		       << "chaser_pos_x_m,chaser_pos_y_m,chaser_pos_z_m,"
 		       << "chaser_quat_w,chaser_quat_x,chaser_quat_y,chaser_quat_z,"
@@ -330,7 +327,8 @@ namespace space_docking::dynamics
 		       << "target_quat_w,target_quat_x,target_quat_y,target_quat_z,"
 		       << "rel_pos_x_m,rel_pos_y_m,rel_pos_z_m,"
 		       << "rel_vel_x_mps,rel_vel_y_mps,rel_vel_z_mps,"
-		       << "rel_yaw_deg,rel_pitch_deg,rel_roll_deg\n";
+		       << "rel_yaw_deg,rel_pitch_deg,rel_roll_deg,"
+		       << "wall_time_s,cycle_period_us,cycle_overrun\n";
 		m_file.flush();
 	}
 
@@ -375,7 +373,13 @@ namespace space_docking::dynamics
 		   << std::setprecision(4)
 		   << entry.relativeEulerDeg.yaw << ","
 		   << entry.relativeEulerDeg.pitch << ","
-		   << entry.relativeEulerDeg.roll << "\n";
+		   << entry.relativeEulerDeg.roll << ","
+		   // Real-time loop timing (verifies the 1 ms cadence)
+		   << std::setprecision(6)
+		   << entry.wallTimeS << ","
+		   << std::setprecision(1)
+		   << entry.cyclePeriodUs << ","
+		   << static_cast<int>(entry.cycleOverrun) << "\n";
 	}
 
 	// Formats a generic vector of doubles into a comma-separated line
@@ -434,9 +438,11 @@ namespace space_docking::dynamics
 				}
 			}
 
-			m_writtenRows.fetch_add(batch.size(), std::memory_order_relaxed);
-			batch.clear();
 			m_file.flush();
+			m_writtenRows.fetch_add(batch.size(), std::memory_order_relaxed);
+			// Rows are now on disk; release anyone blocked in flush()
+			m_pendingRows.fetch_sub(batch.size());
+			batch.clear();
 		}
 	}
 }

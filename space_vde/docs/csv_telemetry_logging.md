@@ -23,6 +23,30 @@ To fulfill these requirements without introducing real-time latency or disk jitt
 
 ---
 
+## 1a. Update: 1 ms Logging & Loop Timing Verification
+
+**What changed**
+* Default `<logdecimation>` is now **1**: one CSV row per 1 ms physics step (1000 Hz). Set it back to `10` for the old 100 Hz rate.
+* The CSV has **28 columns**. Three timing columns follow the original 25:
+
+| Column | Units | Meaning |
+| :--- | :--- | :--- |
+| `wall_time_s` | s | Real (steady_clock) time since the run started. Should track `timestamp_s`. |
+| `cycle_period_us` | us | Measured time between the start of the previous loop cycle and this one. Target: 1000 us. `0` on the first row. |
+| `cycle_overrun` | 0/1 | `1` when `cycle_period_us` > 1100 us (`kCycleOverrunThresholdUs`). |
+
+* When the engine stops cleanly (Ctrl+C), it prints a timing summary: mean, min and max period, and the overrun count.
+* `CsvLogger::flush()` now waits until every queued row is written to disk. Before, it returned as soon as the queue was empty, even if the worker was still writing the last batch.
+
+**How to check a run is really 1 ms**
+* `timestamp_s` should step by exactly 0.001 from row to row.
+* `cycle_period_us` should be about 1000, and `cycle_overrun` should be 0 on nearly every row.
+* `wall_time_s` on the last row should be close to `timestamp_s`. If it is ahead, cycles ran late.
+
+**Disk usage:** about 250 KB/s, roughly 0.9 GB per hour of simulated run.
+
+---
+
 ## 2. Key Distinction: Code-Level Diagnostics vs. Telemetry Logging
 
 A common question is why two different loggers exist in the architecture:

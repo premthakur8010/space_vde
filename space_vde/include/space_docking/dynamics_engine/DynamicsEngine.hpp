@@ -55,6 +55,13 @@ namespace space_docking::dynamics
 		 */
 		ErrorCode step(double dt);
 
+		/**
+		 * @brief Record real-time loop timing for the next step() so it is written into the CSV row.
+		 * @param wallTimeS Wall-clock seconds since the run started.
+		 * @param cyclePeriodUs Measured period of the current cycle in microseconds (0 if unknown).
+		 */
+		void setLoopTiming(double wallTimeS, double cyclePeriodUs) noexcept;
+
 		void setTelemetry(const Telemetry& t) noexcept;
 		void setNgcForces(const std::array<ForceTorque, 2>& f) noexcept;
 		void setGspFeedback(const GspFeedback& f) noexcept;
@@ -97,5 +104,7 @@ namespace space_docking::dynamics
 		TelemetryAccumulator m_accumulator{};
 		uint64_t m_stepCount{0};
 		double m_simTime{0.0};
+		double m_wallTimeS{0.0};      ///< Loop wall-clock time supplied by setLoopTiming()
+		double m_cyclePeriodUs{0.0};  ///< Measured cycle period supplied by setLoopTiming()
 	};
 }

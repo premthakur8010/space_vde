@@ -166,9 +166,9 @@ namespace space_docking::dynamics::default_config
         <!-- 
             Logging decimation rate: 
             Specifies how often output is recorded from the 1000 Hz physics loop.
-            e.g. 10 = records every 10 ms (100 Hz output data rate).
+            1 = records every 1 ms (1000 Hz, every physics step); 10 = every 10 ms (100 Hz).
         -->
-        <logdecimation>10</logdecimation>
+        <logdecimation>1</logdecimation>
     </logging>
 </simulationconfig>
 )VDEXML";

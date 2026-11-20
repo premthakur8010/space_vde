@@ -55,6 +55,8 @@ namespace space_docking::dynamics
 		// 5. Initialize CSV telemetry logger and decimation accumulator (10 ms = 100 Hz log rate)
 		m_stepCount = 0;
 		m_simTime = 0.0;
+		m_wallTimeS = 0.0;
+		m_cyclePeriodUs = 0.0;
 		m_accumulator = TelemetryAccumulator(config.logDecimation);
 		m_accumulator.reset(m_latestRelativeState.pose);
 
@@ -183,7 +185,7 @@ namespace space_docking::dynamics
 		m_simTime += dt;
 
 		// ---------------------------------------------------------------------
-		// Step 3.6: Asynchronous Decimated CSV Logging (Every 10 ms = 100 Hz)
+		// Step 3.6: Asynchronous CSV Logging (every <logdecimation> steps; 1 = every 1 ms)
 		// ---------------------------------------------------------------------
 		// Batching samples and writing in the background prevents slow disk I/O
 		// from causing timing jitter in this critical 1 ms real-time physics loop.
@@ -193,7 +195,10 @@ namespace space_docking::dynamics
 
 			if (m_accumulator.isReady())
 			{
-				const TelemetryLogEntry entry = m_accumulator.computeNetEntryAndAdvance(m_simTime, m_stepCount);
+				TelemetryLogEntry entry = m_accumulator.computeNetEntryAndAdvance(m_simTime, m_stepCount);
+				entry.wallTimeS = m_wallTimeS;
+				entry.cyclePeriodUs = m_cyclePeriodUs;
+				entry.cycleOverrun = (m_cyclePeriodUs > kCycleOverrunThresholdUs) ? 1 : 0;
 				m_csvLogger.log(entry);
 			}
 		}
@@ -204,6 +209,13 @@ namespace space_docking::dynamics
 	// =========================================================================
 	// 4. State Accessors and Sensor Mutators
 	// =========================================================================
+
+	// Stores the real-time loop timing measured by the caller so the next CSV row carries it
+	void DynamicsEngine::setLoopTiming(double wallTimeS, double cyclePeriodUs) noexcept
+	{
+		m_wallTimeS = wallTimeS;
+		m_cyclePeriodUs = cyclePeriodUs;
+	}
 
 	// Injects live load-cell force/torque readings from the Stewart platform
 	void DynamicsEngine::setTelemetry(const Telemetry& t) noexcept

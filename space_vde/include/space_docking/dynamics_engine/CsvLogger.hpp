@@ -67,7 +67,15 @@ namespace space_docking::dynamics
 
 		// Relative Attitude in Euler Angles (for HUD telemetry gauges: Yaw, Pitch, Roll in degrees)
 		EulerAngles relativeEulerDeg{};
+
+		// Real-time loop timing (proves each row was produced on a 1 ms cycle)
+		double wallTimeS{0.0};       ///< Wall-clock time since the run started (steady_clock, s)
+		double cyclePeriodUs{0.0};   ///< Measured period between this cycle's start and the previous one (us); 0 on first cycle
+		uint8_t cycleOverrun{0};     ///< 1 if cyclePeriodUs exceeded kCycleOverrunThresholdUs, else 0
 	};
+
+	/// A cycle is flagged as an overrun when its measured period exceeds this (1 ms nominal + 10% tolerance).
+	constexpr double kCycleOverrunThresholdUs = 1100.0;
 
 	/**
 	 * @class TelemetryAccumulator
@@ -217,6 +225,7 @@ namespace space_docking::dynamics
 		std::atomic<bool> m_running{false};
 		std::atomic<bool> m_isOpen{false};
 		std::atomic<uint64_t> m_writtenRows{0};
+		std::atomic<uint64_t> m_pendingRows{0}; ///< Rows queued or being written but not yet flushed to disk
 
 		enum class QueueItemType : uint8_t { TelemetryEntry, RawValues };
 		struct QueueItem
