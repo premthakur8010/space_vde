@@ -80,6 +80,15 @@ namespace space_docking::dynamics
 				outConfig.chaserInitialVelocity.z = extractDouble(velBlock, tags::kVz, 0.0);
 			}
 
+			// Optional: initial body angular velocity in rad/s (defaults to 0 if the block is absent)
+			const std::string angVelBlock = extractTagContent(chaserBlock, tags::kInitialAngularVelocity);
+			if (!angVelBlock.empty())
+			{
+				outConfig.chaserInitialAngularVelocity.x = extractDouble(angVelBlock, tags::kWx, 0.0);
+				outConfig.chaserInitialAngularVelocity.y = extractDouble(angVelBlock, tags::kWy, 0.0);
+				outConfig.chaserInitialAngularVelocity.z = extractDouble(angVelBlock, tags::kWz, 0.0);
+			}
+
 			// Validate physical mass parameter (must be positive to prevent division by zero in dynamics)
 			if (outConfig.chaserMass <= 0.0)
 			{
@@ -126,6 +135,15 @@ namespace space_docking::dynamics
 				outConfig.targetInitialVelocity.x = extractDouble(velBlock, tags::kVx, 0.0);
 				outConfig.targetInitialVelocity.y = extractDouble(velBlock, tags::kVy, 0.0);
 				outConfig.targetInitialVelocity.z = extractDouble(velBlock, tags::kVz, 0.0);
+			}
+
+			// Optional: initial body angular velocity in rad/s (defaults to 0 if the block is absent)
+			const std::string angVelBlock = extractTagContent(targetBlock, tags::kInitialAngularVelocity);
+			if (!angVelBlock.empty())
+			{
+				outConfig.targetInitialAngularVelocity.x = extractDouble(angVelBlock, tags::kWx, 0.0);
+				outConfig.targetInitialAngularVelocity.y = extractDouble(angVelBlock, tags::kWy, 0.0);
+				outConfig.targetInitialAngularVelocity.z = extractDouble(angVelBlock, tags::kWz, 0.0);
 			}
 		}
 

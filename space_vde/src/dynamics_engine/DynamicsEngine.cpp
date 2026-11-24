@@ -40,11 +40,13 @@ namespace space_docking::dynamics
 		BodyState chaserState{};
 		chaserState.pose = config.initialSeparation;
 		chaserState.velocity = config.chaserInitialVelocity;
+		chaserState.angularRate = config.chaserInitialAngularVelocity;
 		m_chaser.setState(chaserState);
 
 		BodyState targetState{};
 		targetState.pose = config.targetInitialPosition;
 		targetState.velocity = config.targetInitialVelocity;
+		targetState.angularRate = config.targetInitialAngularVelocity;
 		m_target.setState(targetState);
 
 		// 4. Compute initial relative kinematics and platform poses

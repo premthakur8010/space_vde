@@ -79,6 +79,13 @@ namespace space_docking::dynamics::default_config
                 <vy>0.0</vy>
                 <vz>0.0</vz>
             </initialvelocity>
+
+            <!-- Initial angular velocity (spin rate) in rad/s about the Chaser body axes -->
+            <initialangularvelocity>
+                <wx>0.0</wx>
+                <wy>0.0</wy>
+                <wz>0.0</wz>
+            </initialangularvelocity>
         </chaser>
 
         <!-- Target Spacecraft (Passive / Station Vehicle) -->
@@ -107,6 +114,13 @@ namespace space_docking::dynamics::default_config
                 <vy>0.0</vy>
                 <vz>0.0</vz>
             </initialvelocity>
+
+            <!-- Target initial angular velocity in rad/s about the Target body axes (0 = not spinning) -->
+            <initialangularvelocity>
+                <wx>0.0</wx>
+                <wy>0.0</wy>
+                <wz>0.0</wz>
+            </initialangularvelocity>
         </target>
     </spacecraft>
 

@@ -25,6 +25,10 @@ namespace space_docking::dynamics::xml_tags
 	constexpr const char* kVx              = "vx";
 	constexpr const char* kVy              = "vy";
 	constexpr const char* kVz              = "vz";
+	constexpr const char* kInitialAngularVelocity = "initialangularvelocity";
+	constexpr const char* kWx              = "wx";
+	constexpr const char* kWy              = "wy";
+	constexpr const char* kWz              = "wz";
 
 	// Platform block
 	constexpr const char* kPlatform        = "platform";

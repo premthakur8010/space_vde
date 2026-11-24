@@ -434,6 +434,8 @@ namespace space_docking::dynamics
 		Pose targetInitialPosition{};
 		Vector3 chaserInitialVelocity{}; // Loaded dynamically from XML configuration
 		Vector3 targetInitialVelocity{}; // Loaded dynamically from XML configuration
+		Vector3 chaserInitialAngularVelocity{}; // [rad/s] body frame, from XML <initialangularvelocity>
+		Vector3 targetInitialAngularVelocity{}; // [rad/s] body frame, from XML <initialangularvelocity>
 		FrameMapping frameMapping{FrameMapping::DEFAULT};
 
 		// Logging configuration provision (loaded dynamically from XML)

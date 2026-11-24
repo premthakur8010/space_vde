@@ -150,6 +150,41 @@ int main()
 	REQUIRE(xml_utils::resolveConfigFilePath("simulation_config.xml", tempXmlPath) == tempXmlPath);
 	std::remove(tempXmlPath.c_str());
 
+	// Missing <initialangularvelocity> block must default to zero spin
+	REQUIRE(netFileConfig.chaserInitialAngularVelocity.x == 0.0);
+	REQUIRE(netFileConfig.targetInitialAngularVelocity.z == 0.0);
+
+	// 7b. Test <initialangularvelocity> parsing and that the engine starts with that spin rate
+	const std::string angVelXmlPath = "test_angular_velocity.xml";
+	{
+		std::ofstream tmp(angVelXmlPath);
+		tmp << "<simulationconfig>"
+		    << "<chaser><masskg>50.0</masskg>"
+		    << "<initialvelocity><vx>0.05</vx><vy>0.0</vy><vz>0.0</vz></initialvelocity>"
+		    << "<initialangularvelocity><wx>0.01</wx><wy>-0.02</wy><wz>0.03</wz></initialangularvelocity>"
+		    << "</chaser>"
+		    << "<target><masskg>100.0</masskg>"
+		    << "<initialangularvelocity><wx>0.0</wx><wy>0.0</wy><wz>0.005</wz></initialangularvelocity>"
+		    << "</target>"
+		    << "<logging><enabled>false</enabled></logging>"
+		    << "</simulationconfig>\n";
+	}
+	RunConfig angCfg{};
+	REQUIRE(XmlConfigLoader::loadRunConfig(angVelXmlPath, angCfg) == ErrorCode::OK);
+	std::remove(angVelXmlPath.c_str());
+	REQUIRE(angCfg.chaserInitialVelocity.x == 0.05); // linear velocity unaffected by the new block
+	REQUIRE(angCfg.chaserInitialAngularVelocity.x == 0.01);
+	REQUIRE(angCfg.chaserInitialAngularVelocity.y == -0.02);
+	REQUIRE(angCfg.chaserInitialAngularVelocity.z == 0.03);
+	REQUIRE(angCfg.targetInitialAngularVelocity.x == 0.0);
+	REQUIRE(angCfg.targetInitialAngularVelocity.z == 0.005);
+
+	DynamicsEngine angEngine;
+	angCfg.loggingEnabled = false;
+	REQUIRE(angEngine.initialize(angCfg) == ErrorCode::OK);
+	REQUIRE(angEngine.getChaser().getState().angularRate.y == -0.02);
+	REQUIRE(angEngine.getTarget().getState().angularRate.z == 0.005);
+
 	// 8. Test tamper-proof default.xml regeneration (missing -> created, intact -> untouched, tampered -> restored)
 	const std::filesystem::path testDefaultPath = "test_tamper_default.xml";
 	std::filesystem::remove(testDefaultPath);
